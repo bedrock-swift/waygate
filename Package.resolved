@@ -1,0 +1,41 @@
+{
+  "originHash" : "25837ef6251ab6adf258561da7e4e980056ddb11f6c5d340b1bbf6fbf7382d11",
+  "pins" : [
+    {
+      "identity" : "cryptoswift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/krzyzanowskim/CryptoSwift.git",
+      "state" : {
+        "revision" : "e45a26384239e028ec87fbcc788f513b67e10d8f",
+        "version" : "1.9.0"
+      }
+    },
+    {
+      "identity" : "raknet",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/bedrock-swift/raknet.git",
+      "state" : {
+        "revision" : "49151d10ed2d40f6d8279fafb8b2b747b2385aa7"
+      }
+    },
+    {
+      "identity" : "swift-asn1",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-asn1.git",
+      "state" : {
+        "revision" : "917b472dbe53ba699cbb0495f9a95a084bc6364d",
+        "version" : "1.7.4"
+      }
+    },
+    {
+      "identity" : "swift-crypto",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-crypto.git",
+      "state" : {
+        "revision" : "da9d28d69ebe3894b18376c8f2395c2f37b8448f",
+        "version" : "4.5.2"
+      }
+    }
+  ],
+  "version" : 3
+}
