@@ -14,7 +14,8 @@ func run(_ args: [String]) async throws {
     if args.count == 2, let port = UInt16(args[1]), port != 0, args[0] == "listen" || args[0] == "listen-legacy" {
         let login: BedrockLoginServer
         let gameVersion: String
-        if args[0] == "listen-legacy" {
+        let legacy = args[0] == "listen-legacy"
+        if legacy {
             login = BedrockLoginServer(trust: try .mojang())
             gameVersion = "1.21.94"
         } else {
@@ -30,10 +31,18 @@ func run(_ args: [String]) async throws {
         let address = RakNetEndpoint.ipv4(IPv4Endpoint(address: loopback, port: port))
         let listener = try BedrockListener(on: address, login: login, guid: guid, advertisement: advertisement)
         defer { listener.close() }
+        let packs = try ResourcePackNegotiation(
+            info: ResourcePacksInfo(), stack: ResourcePackStack(baseGameVersion: gameVersion),
+            format: legacy ? .legacy : .v26_60
+        )
         print("WayGate listening for Bedrock login on 127.0.0.1:" + String(port))
         for try await session in listener.connections {
-            print("Bedrock login accepted")
-            await session.close()
+            Task {
+                if (try? await session.negotiateResourcePacks(packs, timeout: .seconds(15))) != nil {
+                    print("Bedrock login and resource pack negotiation complete")
+                }
+                await session.close()
+            }
         }
         return
     }
