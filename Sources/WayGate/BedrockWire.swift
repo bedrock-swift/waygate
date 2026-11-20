@@ -14,6 +14,11 @@ public enum BedrockError: Error, Equatable {
     case concurrentOperation
 }
 
+public enum ResourcePackFormat: Sendable {
+    case legacy
+    case v26_60
+}
+
 struct BedrockReader {
     private var bytes: ArraySlice<UInt8>
 

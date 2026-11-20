@@ -44,12 +44,12 @@ public struct ResourcePackStack: Equatable, Sendable {
         self.includeEditorPacks = includeEditorPacks
     }
 
-    public init(decoding packet: BedrockPacket) throws {
+    public init(decoding packet: BedrockPacket, format: ResourcePackFormat = .v26_60) throws {
         guard packet.id == Self.packetID else { throw BedrockError.unexpectedPacket(packet.id) }
         guard packet.payload.count <= BedrockBatch.maximumBytes else { throw BedrockError.limitExceeded }
         var reader = BedrockReader(packet.payload[...])
         required = try reader.bool()
-        behaviorPacks = try Self.readPacks(&reader)
+        behaviorPacks = format == .legacy ? try Self.readPacks(&reader) : []
         texturePacks = try Self.readPacks(&reader)
         baseGameVersion = try reader.string()
         let count = try reader.littleEndian(UInt32.self)
@@ -61,10 +61,14 @@ public struct ResourcePackStack: Equatable, Sendable {
         guard reader.isEmpty else { throw BedrockError.malformed }
     }
 
-    public func packet(sender: UInt8 = 0, target: UInt8 = 0) throws -> BedrockPacket {
+    public func packet(sender: UInt8 = 0, target: UInt8 = 0, format: ResourcePackFormat = .v26_60) throws -> BedrockPacket {
         guard let count = UInt32(exactly: experiments.count) else { throw BedrockError.limitExceeded }
         var payload: [UInt8] = [required ? 1 : 0]
-        try Self.writePacks(behaviorPacks, into: &payload)
+        if format == .legacy {
+            try Self.writePacks(behaviorPacks, into: &payload)
+        } else if !behaviorPacks.isEmpty {
+            throw BedrockError.malformed
+        }
         try Self.writePacks(texturePacks, into: &payload)
         try payload.appendString(baseGameVersion)
         payload.appendLittleEndian(count)

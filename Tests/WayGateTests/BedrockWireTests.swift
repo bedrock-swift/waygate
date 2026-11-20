@@ -4,15 +4,15 @@ import Testing
 @Test func resourcePackResponseMatchesTheBedrockWireFormat() throws {
     let wire: [UInt8] = [2, 2, 0, 3, 97, 95, 49, 4, 98, 95, 50, 48]
     let packet = try BedrockPacket(id: 8, sender: 1, payload: wire)
-    let response = try ResourcePackClientResponse(decoding: packet)
+    let response = try ResourcePackClientResponse(decoding: packet, format: .legacy)
     #expect(response.status == .sendPacks)
     #expect(response.packIDs == ["a_1", "b_20"])
-    #expect(try response.packet(sender: 1) == packet)
-    #expect(try ResourcePackClientResponse(status: .completed).packet().payload == [4, 0, 0])
+    #expect(try response.packet(sender: 1, format: .legacy) == packet)
+    #expect(try ResourcePackClientResponse(status: .completed).packet(format: .legacy).payload == [4, 0, 0])
 
     for invalid: [UInt8] in [[0, 0, 0], [2, 0, 1], [2, 1, 0, 1, 255], [4, 0, 0, 1]] {
         let packet = try BedrockPacket(id: 8, payload: invalid)
-        #expect(throws: BedrockError.malformed) { try ResourcePackClientResponse(decoding: packet) }
+        #expect(throws: BedrockError.malformed) { try ResourcePackClientResponse(decoding: packet, format: .legacy) }
     }
 }
 

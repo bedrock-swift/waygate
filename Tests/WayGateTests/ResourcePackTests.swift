@@ -51,6 +51,8 @@ import WayGate
 
     let truncated = try BedrockPacket(id: 83, payload: Array(chunkPacket.payload.dropLast()))
     #expect(throws: BedrockError.malformed) { try ResourcePackChunkData(decoding: truncated) }
+    let negativeIndex = try BedrockPacket(id: 84, payload: [1, 112, 255, 255, 255, 255])
+    #expect(throws: BedrockError.malformed) { try ResourcePackChunkRequest(decoding: negativeIndex) }
 }
 
 @Test func preservesPackOrderAndExperiments() throws {
@@ -65,12 +67,12 @@ import WayGate
         experiments: [.init(name: "example", enabled: true)], experimentsPreviouslyToggled: true
     )
     let packet = try BedrockPacket(id: 7, payload: wire)
-    #expect(try stack.packet() == packet)
-    #expect(try ResourcePackStack(decoding: packet) == stack)
+    #expect(try stack.packet(format: .legacy) == packet)
+    #expect(try ResourcePackStack(decoding: packet, format: .legacy) == stack)
 
     for invalid: [UInt8] in [Array(wire.dropLast()), wire + [0], [0, 255, 255, 255, 255, 15]] {
         let packet = try BedrockPacket(id: 7, payload: invalid)
-        #expect(throws: BedrockError.malformed) { try ResourcePackStack(decoding: packet) }
+        #expect(throws: BedrockError.malformed) { try ResourcePackStack(decoding: packet, format: .legacy) }
     }
 }
 
@@ -91,10 +93,44 @@ import WayGate
         )]
     )
     let packet = try BedrockPacket(id: 6, payload: wire)
-    #expect(try info.packet() == packet)
-    #expect(try ResourcePacksInfo(decoding: packet) == info)
+    #expect(try info.packet(format: .legacy) == packet)
+    #expect(try ResourcePacksInfo(decoding: packet, format: .legacy) == info)
     #expect(try ResourcePacksInfo(decoding: ResourcePacksInfo().packet()).worldTemplateID == nil)
 
     let invalid = try BedrockPacket(id: 6, payload: Array(wire.dropLast()))
-    #expect(throws: BedrockError.malformed) { try ResourcePacksInfo(decoding: invalid) }
+    #expect(throws: BedrockError.malformed) { try ResourcePacksInfo(decoding: invalid, format: .legacy) }
+}
+
+@Test func encodesCurrentResourcePackMetadataAndStack() throws {
+    let info = ResourcePacksInfo(required: true)
+    let metadata = try BedrockPacket(id: 6, payload: [1] + Array(repeating: 0, count: 21))
+    #expect(try info.packet() == metadata)
+    #expect(try ResourcePacksInfo(decoding: metadata) == info)
+
+    let stack = ResourcePackStack(
+        required: true, texturePacks: [.init(id: "t", version: "2", subPackName: "s")], baseGameVersion: "1.26.60"
+    )
+    let stackPacket = try BedrockPacket(id: 7, payload: [
+        1, 1, 1, 0x74, 1, 0x32, 1, 0x73, 7, 0x31, 0x2e, 0x32, 0x36, 0x2e, 0x36, 0x30, 0, 0, 0, 0, 0, 0
+    ])
+    #expect(try stack.packet() == stackPacket)
+    #expect(try ResourcePackStack(decoding: stackPacket) == stack)
+}
+
+@Test func includesPackIDsOnlyWhenTheClientRequestsPacks() throws {
+    let request = ResourcePackClientResponse(status: .sendPacks, packIDs: ["a_1", "b_20"])
+    let wire: [UInt8] = [
+        1, 11, 0x64, 0x6f, 0x77, 0x6e, 0x6c, 0x6f, 0x61, 0x64, 0x69, 0x6e, 0x67, 2, 3, 0x61, 0x5f, 0x31,
+        4, 0x62, 0x5f, 0x32, 0x30
+    ]
+    let transfer = try BedrockPacket(id: 8, payload: wire)
+    #expect(try request.packet() == transfer)
+    #expect(try ResourcePackClientResponse(decoding: transfer) == request)
+
+    let completed = ResourcePackClientResponse(status: .completed)
+    let completePacket = try completed.packet()
+    #expect(completePacket.payload == [3, 25] + Array("resourcepackstackfinished".utf8))
+    #expect(try ResourcePackClientResponse(decoding: completePacket) == completed)
+    let invalid = try BedrockPacket(id: 8, payload: [3] + Array(wire.dropFirst()))
+    #expect(throws: BedrockError.malformed) { try ResourcePackClientResponse(decoding: invalid) }
 }

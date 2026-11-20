@@ -21,6 +21,8 @@ A Swift library for the Minecraft: Bedrock Edition protocol.
 
 Use `BedrockLoginServer(trust: try .mojang())` with `BedrockListener` to authenticate legacy Bedrock login chains. WayGate checks the client data signature, negotiates encryption and publishes a session with the verified identity. Applications can supply a custom identity verifier and handle resource packs and world entry.
 
+Resource pack codecs default to the Bedrock 26.60 layout. Pass `.legacy` when using them with a legacy session.
+
 ## Development
 
 Build with Swift 6.1 or later. Both demo modes bind to IPv4 loopback.

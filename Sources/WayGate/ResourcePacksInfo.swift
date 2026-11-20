@@ -75,7 +75,7 @@ public struct ResourcePacksInfo: Equatable, Sendable {
         self.texturePacks = texturePacks
     }
 
-    public init(decoding packet: BedrockPacket) throws {
+    public init(decoding packet: BedrockPacket, format: ResourcePackFormat = .v26_60) throws {
         guard packet.id == Self.packetID else { throw BedrockError.unexpectedPacket(packet.id) }
         guard packet.payload.count <= BedrockBatch.maximumBytes else { throw BedrockError.limitExceeded }
         var reader = BedrockReader(packet.payload[...])
@@ -86,17 +86,22 @@ public struct ResourcePacksInfo: Equatable, Sendable {
         let templateID = try reader.uuid()
         worldTemplateID = templateID == Self.zeroUUID ? nil : templateID
         worldTemplateVersion = try reader.string()
-        let count = try reader.littleEndian(UInt16.self)
-        texturePacks = try reader.list(count: UInt32(count), minimumElementSize: 32) { try Pack(reading: &$0) }
+        let count = format == .legacy ? UInt32(try reader.littleEndian(UInt16.self)) : try reader.varUInt()
+        texturePacks = try reader.list(count: count, minimumElementSize: 32) { try Pack(reading: &$0) }
         guard reader.isEmpty else { throw BedrockError.malformed }
     }
 
-    public func packet(sender: UInt8 = 0, target: UInt8 = 0) throws -> BedrockPacket {
-        guard let count = UInt16(exactly: texturePacks.count) else { throw BedrockError.limitExceeded }
+    public func packet(sender: UInt8 = 0, target: UInt8 = 0, format: ResourcePackFormat = .v26_60) throws -> BedrockPacket {
         var payload: [UInt8] = [required ? 1 : 0, hasAddons ? 1 : 0, hasScripts ? 1 : 0, forceDisableVibrantVisuals ? 1 : 0]
         payload.appendUUID(worldTemplateID ?? Self.zeroUUID)
         try payload.appendString(worldTemplateVersion)
-        payload.appendLittleEndian(count)
+        if format == .legacy {
+            guard let count = UInt16(exactly: texturePacks.count) else { throw BedrockError.limitExceeded }
+            payload.appendLittleEndian(count)
+        } else {
+            guard let count = UInt32(exactly: texturePacks.count) else { throw BedrockError.limitExceeded }
+            payload.appendVarUInt(count)
+        }
         for pack in texturePacks { try pack.write(to: &payload) }
         guard payload.count <= BedrockBatch.maximumBytes else { throw BedrockError.limitExceeded }
         return try BedrockPacket(id: Self.packetID, sender: sender, target: target, payload: payload)

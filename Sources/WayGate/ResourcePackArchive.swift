@@ -18,7 +18,7 @@ public struct ResourcePackArchive: Sendable {
         guard chunkSize > 0, chunkSize <= BedrockBatch.maximumBytes - overhead else {
             throw ResourcePackTransferError.invalidChunkSize
         }
-        guard let count = UInt32(exactly: (bytes.count - 1) / chunkSize + 1) else {
+        guard let count = UInt32(exactly: (bytes.count - 1) / chunkSize + 1), count <= UInt32(Int32.max) + 1 else {
             throw BedrockError.limitExceeded
         }
         dataInfo = ResourcePackDataInfo(

@@ -56,14 +56,15 @@ public struct ResourcePackChunkRequest: Equatable, Sendable {
         self.index = index
     }
 
-    public init(decoding packet: BedrockPacket) throws {
+    public init(decoding packet: BedrockPacket, format: ResourcePackFormat = .v26_60) throws {
         var reader = try resourcePackReader(packet, id: Self.packetID)
         packID = try reader.string()
         index = try reader.littleEndian(UInt32.self)
-        guard reader.isEmpty else { throw BedrockError.malformed }
+        guard reader.isEmpty, format == .legacy || index <= UInt32(Int32.max) else { throw BedrockError.malformed }
     }
 
-    public func packet(sender: UInt8 = 0, target: UInt8 = 0) throws -> BedrockPacket {
+    public func packet(sender: UInt8 = 0, target: UInt8 = 0, format: ResourcePackFormat = .v26_60) throws -> BedrockPacket {
+        guard format == .legacy || index <= UInt32(Int32.max) else { throw BedrockError.malformed }
         var payload: [UInt8] = []
         try payload.appendString(packID)
         payload.appendLittleEndian(index)
