@@ -27,10 +27,11 @@ Use `BedrockLoginServer.multiplayer(keys: try await MinecraftLoginKeys())` for B
 
 ## Development
 
-Build with Swift 6.1 or later. Both demo modes bind to IPv4 loopback.
+Build with Swift 6.1 or later. The demo binds to IPv4 loopback.
 
 ```sh
 swift test
 swift run waygate listen 19142
+swift run waygate listen-legacy 19142
 swift run waygate 19142 127.0.0.1 19132
 ```
