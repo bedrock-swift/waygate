@@ -85,7 +85,7 @@ public struct BedrockLoginServer: Sendable {
         return packet
     }
 private func sendStatus(_ status: PlayStatus, on transport: any BedrockTransport) async throws {
-    try await transport.send(BedrockBatch.encode([try status.packet()]))
+try await transport.send(BedrockBatch.encode([try status.packet()]))
 }
     private static func handshake(with remote: P384.KeyAgreement.PublicKey) throws -> (packet: BedrockPacket, key: [UInt8]) {
         let signing = P384.Signing.PrivateKey()
