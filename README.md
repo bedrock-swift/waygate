@@ -23,7 +23,7 @@ Use `BedrockLoginServer(trust: try .mojang())` with `BedrockListener` to authent
 
 Resource pack codecs default to the Bedrock 26.60 layout. Pass `.legacy` when using them with a legacy session.
 
-Use `BedrockLoginServer.multiplayer(verifying:)` for Bedrock 26.60. Supply a verifier that checks the multiplayer token and returns the authenticated identity and client public key.
+Use `BedrockLoginServer.multiplayer(keys: try await MinecraftLoginKeys())` for Bedrock 26.60. The key cache verifies multiplayer tokens against Mojang's signing keys and refreshes those keys as they rotate.
 
 ## Development
 

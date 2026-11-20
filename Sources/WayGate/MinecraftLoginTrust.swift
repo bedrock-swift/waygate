@@ -5,6 +5,7 @@ import Foundation
 public enum MinecraftLoginTrustError: Error, Equatable {
     case noSigningKeys
     case unknownSigningKey
+    case signingKeysUnavailable
 }
 
 public struct MinecraftLoginTrust: Sendable {

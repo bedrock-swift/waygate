@@ -25,6 +25,10 @@ public struct BedrockLoginServer: Sendable {
         })
     }
 
+    public static func multiplayer(protocolVersion: Int32 = 2225, keys: MinecraftLoginKeys) -> BedrockLoginServer {
+        multiplayer(protocolVersion: protocolVersion, verifying: keys.verify)
+    }
+
     private init(
         protocolVersion: Int32,
         verification: @escaping @Sendable (LoginRequest) async throws -> (key: [UInt8], identity: BedrockIdentity?)
