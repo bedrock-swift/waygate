@@ -58,9 +58,13 @@ struct BedrockReader {
     }
 
     mutating func string() throws -> String {
-        guard let count = Int(exactly: try varUInt()),
-              let value = String(validating: try read(count), as: UTF8.self) else { throw BedrockError.malformed }
+        guard let value = String(validating: try varBytes(), as: UTF8.self) else { throw BedrockError.malformed }
         return value
+    }
+
+    mutating func varBytes() throws -> ArraySlice<UInt8> {
+        guard let count = Int(exactly: try varUInt()) else { throw BedrockError.malformed }
+        return try read(count)
     }
 
     mutating func list<T>(
@@ -104,7 +108,10 @@ extension [UInt8] {
     }
 
     mutating func appendString(_ value: String) throws {
-        let bytes = value.utf8
+        try appendVarBytes(value.utf8)
+    }
+
+    mutating func appendVarBytes(_ bytes: some Collection<UInt8>) throws {
         guard bytes.count <= BedrockBatch.maximumBytes else { throw BedrockError.limitExceeded }
         appendVarUInt(UInt32(bytes.count))
         guard bytes.count <= BedrockBatch.maximumBytes - count else { throw BedrockError.limitExceeded }

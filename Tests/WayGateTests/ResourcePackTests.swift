@@ -2,6 +2,26 @@ import Foundation
 import Testing
 import WayGate
 
+@Test func resourcePackTransferMatchesGophertunnel() throws {
+    let hash = Array(repeating: UInt8(42), count: 32)
+    let info = ResourcePackDataInfo(packID: "p", chunkSize: 256, chunkCount: 2, size: 258, hash: hash, premium: true, packType: 6)
+    let request = ResourcePackChunkRequest(packID: "p", index: 1)
+    let chunk = ResourcePackChunkData(packID: "p", index: 1, offset: 256, data: [22, 49])
+    let infoWire: [UInt8] = [1, 112, 0, 1, 0, 0, 2, 0, 0, 0, 2, 1, 0, 0, 0, 0, 0, 0, 32] + hash + [1, 6]
+    let infoPacket = try BedrockPacket(id: 82, payload: infoWire)
+    let requestPacket = try BedrockPacket(id: 84, payload: [1, 112, 1, 0, 0, 0])
+    let chunkPacket = try BedrockPacket(id: 83, payload: [1, 112, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 2, 22, 49])
+    #expect(try info.packet() == infoPacket)
+    #expect(try request.packet() == requestPacket)
+    #expect(try chunk.packet() == chunkPacket)
+    #expect(try ResourcePackDataInfo(decoding: infoPacket) == info)
+    #expect(try ResourcePackChunkRequest(decoding: requestPacket) == request)
+    #expect(try ResourcePackChunkData(decoding: chunkPacket) == chunk)
+
+    let truncated = try BedrockPacket(id: 83, payload: Array(chunkPacket.payload.dropLast()))
+    #expect(throws: BedrockError.malformed) { try ResourcePackChunkData(decoding: truncated) }
+}
+
 @Test func resourcePackStackMatchesGophertunnel() throws {
     let wire: [UInt8] = [
         1, 1, 1, 0x62, 1, 0x31, 0, 1, 1, 0x74, 1, 0x32, 1, 0x73,
