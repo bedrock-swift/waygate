@@ -13,10 +13,10 @@ A Swift library for the Minecraft: Bedrock Edition protocol.
 ## Features
 
 - Bedrock packet headers and batched transport framing
-- Protocol 819 server-side login with Mojang certificate-chain verification
+- Legacy Bedrock login with Mojang certificate-chain verification
 - Snappy compression
 - P-384 key exchange and encrypted packet sessions over RakNet
-- Resource pack negotiation and transfer packets for protocol 819, including archive hashing and chunk lookup
+- Resource pack metadata, transfer packets, and archive hashing
 - Raw RakNet relay for a fixed upstream
 
 Use `BedrockLoginServer(trust: try .mojang())` with `BedrockListener` to authenticate legacy Bedrock login chains. WayGate checks the client data signature, negotiates encryption and publishes a session with the verified identity. Applications can supply a custom identity verifier and handle resource packs and world entry.

@@ -33,7 +33,7 @@ import WayGate
     }
 }
 
-@Test func resourcePackTransferMatchesProtocol819() throws {
+@Test func encodesResourcePackTransferPackets() throws {
     let hash = Array(repeating: UInt8(42), count: 32)
     let info = ResourcePackDataInfo(packID: "p", chunkSize: 256, chunkCount: 2, size: 258, hash: hash, premium: true, packType: 6)
     let request = ResourcePackChunkRequest(packID: "p", index: 1)
@@ -53,7 +53,7 @@ import WayGate
     #expect(throws: BedrockError.malformed) { try ResourcePackChunkData(decoding: truncated) }
 }
 
-@Test func resourcePackStackMatchesProtocol819() throws {
+@Test func preservesPackOrderAndExperiments() throws {
     let wire: [UInt8] = [
         1, 1, 1, 0x62, 1, 0x31, 0, 1, 1, 0x74, 1, 0x32, 1, 0x73,
         7, 0x31, 0x2e, 0x32, 0x31, 0x2e, 0x39, 0x33,
@@ -74,7 +74,7 @@ import WayGate
     }
 }
 
-@Test func resourcePacksInfoMatchesProtocol819() throws {
+@Test func encodesResourcePackMetadataAndTemplate() throws {
     let wire: [UInt8] = [
         1, 0, 1, 0, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0,
         0xff, 0xee, 0xdd, 0xcc, 0xbb, 0xaa, 0x99, 0x88, 1, 0x76, 1, 0,
