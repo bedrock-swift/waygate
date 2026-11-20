@@ -23,6 +23,8 @@ Use `BedrockLoginServer(trust: try .mojang())` with `BedrockListener` to authent
 
 Resource pack codecs default to the Bedrock 26.60 layout. Pass `.legacy` when using them with a legacy session.
 
+Use `BedrockLoginServer.multiplayer(verifying:)` for Bedrock 26.60. Supply a verifier that checks the multiplayer token and returns the authenticated identity and client public key.
+
 ## Development
 
 Build with Swift 6.1 or later. Both demo modes bind to IPv4 loopback.

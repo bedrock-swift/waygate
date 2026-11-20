@@ -4,23 +4,49 @@ import RakNet
 import Testing
 @testable import WayGate
 
-@Test(.timeLimit(.minutes(1))) func raknetLoginNegotiatesAnEncryptedBedrockSession() async throws {
+enum LoginMode: Sendable {
+    case certificateChain
+    case multiplayerToken
+}
+
+@Test(.timeLimit(.minutes(1)), arguments: [LoginMode.certificateChain, .multiplayerToken])
+func raknetLoginNegotiatesAnEncryptedBedrockSession(_ mode: LoginMode) async throws {
     let signing = P384.Signing.PrivateKey()
     let key = try P384.KeyAgreement.PrivateKey(rawRepresentation: signing.rawRepresentation)
     let clientClaims = Data(#"{"DeviceOS":7}"#.utf8)
     let token = try BedrockJWT.sign(clientClaims, with: signing)
-    let fixture = try IdentityFixture(client: signing)
-    let login = BedrockLoginServer(trust: fixture.trust)
+    let login: BedrockLoginServer
+    let loginPacket: BedrockPacket
+    switch mode {
+    case .certificateChain:
+        let fixture = try IdentityFixture(client: signing)
+        login = BedrockLoginServer(trust: fixture.trust)
+        loginPacket = try fixture.packet(clientToken: token)
+    case .multiplayerToken:
+        let id = try #require(UUID(uuidString: "2ac55962-b2b2-4cfc-83e4-b27250f26cb3"))
+        let identity = BedrockIdentity(
+            id: id, xuid: "12345", displayName: "FixturePlayer", publicKeyDER: Array(signing.publicKey.derRepresentation)
+        )
+        login = .multiplayer { presented in
+            guard presented == "header.payload.signature" else { throw BedrockError.untrustedIdentity }
+            return identity
+        }
+        #expect(login.protocolVersion == 2225)
+        let envelope = Data(#"{"AuthenticationType":0,"Token":"header.payload.signature"}"#.utf8)
+        loginPacket = try makeLoginPacket(protocolVersion: 2225, envelope: envelope, clientToken: token)
+    }
     let loopback = RakNetEndpoint.ipv4(IPv4Endpoint(address: 0x7f000001, port: 0))
     let listener = try BedrockListener(on: loopback, login: login)
     defer { listener.close() }
 
     let client = try await RakNetConnection.dial(listener.localAddress)
-    try await client.send([0xfe, 6, 0xc1, 1, 0, 0, 3, 0x33])
+    var version: [UInt8] = []
+    version.appendBigEndian(login.protocolVersion)
+    let settingsRequest = try BedrockPacket(id: 193, payload: version)
+    try await client.send(BedrockBatch.encode([settingsRequest]))
     let settings = try #require(try await client.receive())
     #expect(settings == [0xfe, 12, 0x8f, 1, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0])
 
-    let loginPacket = try fixture.packet(clientToken: token)
     try await client.send(BedrockBatch.encode([loginPacket], framing: .negotiated))
 
     let encoded = try #require(try await client.receive())
@@ -66,6 +92,18 @@ import Testing
     let decryptedReply = try open.open(reply)
     #expect(try BedrockBatch.decode(decryptedReply, framing: .negotiated) == [message])
     await session.close()
+}
+
+@Test func rejectsGuestAndEmptyMultiplayerCredentials() throws {
+    for envelope in [
+        #"{"AuthenticationType":1,"Token":"header.payload.signature"}"#,
+        #"{"AuthenticationType":2,"Token":"header.payload.signature"}"#,
+        #"{"AuthenticationType":0,"Token":""}"#
+    ] {
+        let packet = try makeLoginPacket(protocolVersion: 2225, envelope: Data(envelope.utf8), clientToken: "client")
+        let request = try LoginRequest(decoding: packet)
+        #expect(throws: BedrockError.untrustedIdentity) { try request.multiplayerToken() }
+    }
 }
 
 private func decode(_ base64: Substring) throws -> Data {
@@ -141,15 +179,20 @@ private struct IdentityFixture {
     }
 
     func packet(clientToken: String) throws -> BedrockPacket {
-        let token = Array(clientToken.utf8)
-        var request: [UInt8] = []
-        for field in [Array(envelope), token] {
-            request += Swift.withUnsafeBytes(of: UInt32(field.count).littleEndian) { Array($0) }
-            request += field
-        }
-        var payload: [UInt8] = [0, 0, 3, 0x33]
-        payload.appendVarUInt(UInt32(request.count))
-        payload += request
-        return try BedrockPacket(id: 1, payload: payload)
+        let version = BedrockLoginServer(trust: trust).protocolVersion
+        return try makeLoginPacket(protocolVersion: version, envelope: envelope, clientToken: clientToken)
     }
+}
+
+private func makeLoginPacket(protocolVersion: Int32, envelope: Data, clientToken: String) throws -> BedrockPacket {
+    var request: [UInt8] = []
+    for field in [Array(envelope), Array(clientToken.utf8)] {
+        request.appendLittleEndian(UInt32(field.count))
+        request += field
+    }
+    var payload: [UInt8] = []
+    payload.appendBigEndian(protocolVersion)
+    payload.appendVarUInt(UInt32(request.count))
+    payload += request
+    return try BedrockPacket(id: 1, payload: payload)
 }
