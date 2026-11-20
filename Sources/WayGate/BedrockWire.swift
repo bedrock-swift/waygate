@@ -28,7 +28,7 @@ struct BedrockReader {
         return prefix
     }
 
-    mutating func varUInt() throws -> UInt32 {
+      mutating func varUInt() throws -> UInt32 {
         var value: UInt32 = 0
         for shift in stride(from: 0, through: 28, by: 7) {
             let byte = try byte()
@@ -38,6 +38,18 @@ struct BedrockReader {
         }
         throw BedrockError.malformed
     }
+
+    mutating func varULong() throws -> UInt64 {
+        var value: UInt64 = 0
+        for shift in stride(from: 0, through: 63, by: 7) {
+            let byte = try byte()
+            guard shift < 63 || byte < 2 else { throw BedrockError.malformed }
+            value |= UInt64(byte & 0x7f) << shift
+            if byte & 0x80 == 0 { return value }
+        }
+        throw BedrockError.malformed
+    }
+
 
     mutating func byte() throws -> UInt8 {
         guard let value = bytes.first else { throw BedrockError.malformed }
@@ -55,7 +67,6 @@ struct BedrockReader {
         return try read(count)
     }
 }
-
 extension [UInt8] {
     mutating func appendVarUInt(_ value: UInt32) {
         var remaining = value
@@ -65,6 +76,16 @@ extension [UInt8] {
         }
         append(UInt8(remaining))
     }
+
+    mutating func appendVarULong(_ value: UInt64) {
+        var remaining = value
+        while remaining >= 128 {
+            append(UInt8(remaining & 127) | 128)
+            remaining >>= 7
+        }
+        append(UInt8(remaining))
+    }
+
 
     mutating func appendBigEndian(_ value: Int32) {
         Swift.withUnsafeBytes(of: value.bigEndian) { append(contentsOf: $0) }
