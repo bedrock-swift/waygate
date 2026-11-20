@@ -2,6 +2,37 @@ import Foundation
 import Testing
 import WayGate
 
+@Test func resourcePackArchiveReturnsOnlyRequestedBytes() throws {
+    let id = try #require(UUID(uuidString: "00112233-4455-6677-8899-aabbccddeeff"))
+    let archive = try ResourcePackArchive(id: id, bytes: Data([0, 0x61, 0x62, 0x63])[1...], chunkSize: 2)
+    let info = archive.dataInfo
+    #expect(info.packID == "00112233-4455-6677-8899-aabbccddeeff")
+    #expect(info.chunkCount == 2)
+    #expect(info.size == 3)
+    #expect(info.hash == [
+        0xba, 0x78, 0x16, 0xbf, 0x8f, 0x01, 0xcf, 0xea, 0x41, 0x41, 0x40, 0xde, 0x5d, 0xae, 0x22, 0x23,
+        0xb0, 0x03, 0x61, 0xa3, 0x96, 0x17, 0x7a, 0x9c, 0xb4, 0x10, 0xff, 0x61, 0xf2, 0x00, 0x15, 0xad
+    ])
+    let first = try archive.chunk(for: .init(packID: info.packID, index: 0))
+    #expect(first.offset == 0)
+    #expect(first.data == [0x61, 0x62])
+    let last = try archive.chunk(for: .init(packID: info.packID, index: 1))
+    #expect(last.offset == 2)
+    #expect(last.data == [0x63])
+    #expect(throws: ResourcePackTransferError.invalidChunkIndex) {
+        try archive.chunk(for: .init(packID: info.packID, index: 2))
+    }
+    #expect(throws: ResourcePackTransferError.unexpectedPack) {
+        try archive.chunk(for: .init(packID: "other", index: 0))
+    }
+    #expect(throws: ResourcePackTransferError.emptyArchive) {
+        try ResourcePackArchive(id: id, bytes: Data())
+    }
+    #expect(throws: ResourcePackTransferError.invalidChunkSize) {
+        try ResourcePackArchive(id: id, bytes: Data([1]), chunkSize: 4 * 1024 * 1024)
+    }
+}
+
 @Test func resourcePackTransferMatchesGophertunnel() throws {
     let hash = Array(repeating: UInt8(42), count: 32)
     let info = ResourcePackDataInfo(packID: "p", chunkSize: 256, chunkCount: 2, size: 258, hash: hash, premium: true, packType: 6)
