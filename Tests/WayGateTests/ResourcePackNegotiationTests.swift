@@ -2,6 +2,19 @@ import Foundation
 import Testing
 import WayGate
 
+@Test func acceptsClientCacheStatusBeforeThePackResponse() throws {
+    var exchange = try ResourcePackNegotiation(info: .init(), stack: .init(baseGameVersion: "1.26.60"))
+    let status = try ClientCacheStatus(enabled: false).packet()
+    #expect(status == (try BedrockPacket(id: 129, payload: [0])))
+    #expect(throws: ResourcePackNegotiationError.unexpectedResponse) { try exchange.receive(status) }
+    _ = try exchange.begin()
+    let invalid = try BedrockPacket(id: 129, payload: [2])
+    #expect(throws: BedrockError.malformed) { try exchange.receive(invalid) }
+    #expect(try exchange.receive(status).isEmpty)
+    #expect(exchange.clientCacheEnabled == false)
+    #expect(throws: ResourcePackNegotiationError.unexpectedResponse) { try exchange.receive(status) }
+}
+
 @Test func servesRequestedPacksInOrderBeforeSendingTheStack() throws {
     let first = try makeArchive("11111111-1111-4111-8111-111111111111", bytes: [1, 2, 3, 4])
     let second = try makeArchive("22222222-2222-4222-8222-222222222222", bytes: [5, 6, 7])

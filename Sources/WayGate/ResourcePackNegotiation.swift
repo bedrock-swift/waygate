@@ -39,6 +39,7 @@ public struct ResourcePackNegotiation: Sendable {
     private let packs: [String: OfferedPack]
     private let format: ResourcePackFormat
     private var state: State = .idle
+    public private(set) var clientCacheEnabled: Bool?
 
     public var isComplete: Bool {
         if case .complete = state { return true }
@@ -80,6 +81,15 @@ public struct ResourcePackNegotiation: Sendable {
     public mutating func receive(_ packet: BedrockPacket) throws -> [BedrockPacket] {
         guard packet.sender == 0, packet.target == 0 else { throw BedrockError.malformed }
         switch packet.id {
+        case ClientCacheStatus.packetID:
+            switch state {
+            case .offered, .sending, .awaitingDownloaded, .awaitingCompletion:
+                guard clientCacheEnabled == nil else { throw ResourcePackNegotiationError.unexpectedResponse }
+                clientCacheEnabled = try ClientCacheStatus(decoding: packet).enabled
+                return []
+            default:
+                throw ResourcePackNegotiationError.unexpectedResponse
+            }
         case ResourcePackClientResponse.packetID:
             return try respond(to: ResourcePackClientResponse(decoding: packet, format: format))
         case ResourcePackChunkRequest.packetID:

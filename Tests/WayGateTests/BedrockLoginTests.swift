@@ -121,6 +121,8 @@ private func exchangeResourcePack(
     let exchange = try ResourcePackNegotiation(info: info, stack: stack, archives: [archive], format: format)
     async let trailing = session.negotiateResourcePacks(exchange)
 
+    let cache = try BedrockPacket(id: 129, payload: [1])
+    try await send([cache])
     #expect(try await receive() == info.packet(format: format))
     await #expect(throws: BedrockError.concurrentOperation) { try await session.receive() }
     try await send([ResourcePackClientResponse(status: .sendPacks, packIDs: [packID]).packet(format: format)])
@@ -135,6 +137,7 @@ private func exchangeResourcePack(
     try await send([ResourcePackClientResponse(status: .completed).packet(format: format), game])
     let pending = try await trailing
     #expect(pending == [game])
+    #expect(await session.clientCacheEnabled == true)
 }
 
 @Test func rejectsGuestAndEmptyMultiplayerCredentials() throws {

@@ -22,6 +22,7 @@ public actor BedrockSession {
     public nonisolated let login: LoginRequest
     public nonisolated let identity: BedrockIdentity?
     public nonisolated let clientData: Data
+    public private(set) var clientCacheEnabled: Bool?
 
     init(
         transport: any BedrockTransport, login: LoginRequest, identity: BedrockIdentity?, clientData: Data, key: [UInt8]
@@ -112,7 +113,10 @@ public actor BedrockSession {
         while let incoming = try await receiveBatch() {
             for (index, packet) in incoming.enumerated() {
                 for response in try exchange.receive(packet) { try await sendBatch([response]) }
-                if exchange.isComplete { return Array(incoming.dropFirst(index + 1)) }
+                if exchange.isComplete {
+                    clientCacheEnabled = exchange.clientCacheEnabled
+                    return Array(incoming.dropFirst(index + 1))
+                }
             }
         }
         throw BedrockError.closed
