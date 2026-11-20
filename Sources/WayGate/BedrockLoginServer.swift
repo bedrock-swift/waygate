@@ -47,7 +47,7 @@ public struct BedrockLoginServer: Sendable {
         let requested = try version.protocolVersion()
         guard version.isEmpty else { throw BedrockError.malformed }
         if requested != protocolVersion {
-            try await sendStatus(requested < protocolVersion ? 1 : 2, on: transport)
+            try await sendStatus(requested < protocolVersion ? .failedClient : .failedServer, on: transport)
             throw BedrockError.unsupportedProtocol(requested)
         }
         let threshold = UInt16(BedrockBatch.compressionThreshold)
@@ -71,7 +71,7 @@ public struct BedrockLoginServer: Sendable {
         guard let acknowledgement = try await session.receive(), acknowledgement.count == 1,
               let received = acknowledgement.first, received.id == 4, received.sender == 0, received.target == 0,
               received.payload.isEmpty else { throw BedrockError.malformed }
-        try await session.send([BedrockPacket(id: 2, payload: [0, 0, 0, 0])])
+        try await session.send([try PlayStatus.loginSuccess.packet()])
         return session
     }
 
@@ -84,13 +84,9 @@ public struct BedrockLoginServer: Sendable {
         guard packet.id == id else { throw BedrockError.unexpectedPacket(packet.id) }
         return packet
     }
-
-    private func sendStatus(_ status: Int32, on transport: any BedrockTransport) async throws {
-        var payload: [UInt8] = []
-        payload.appendBigEndian(status)
-        try await transport.send(BedrockBatch.encode([BedrockPacket(id: 2, payload: payload)]))
-    }
-
+private func sendStatus(_ status: PlayStatus, on transport: any BedrockTransport) async throws {
+    try await transport.send(BedrockBatch.encode([try status.packet()]))
+}
     private static func handshake(with remote: P384.KeyAgreement.PublicKey) throws -> (packet: BedrockPacket, key: [UInt8]) {
         let signing = P384.Signing.PrivateKey()
         let agreement = try P384.KeyAgreement.PrivateKey(rawRepresentation: signing.rawRepresentation)
