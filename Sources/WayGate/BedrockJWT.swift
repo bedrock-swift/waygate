@@ -25,42 +25,60 @@ enum BedrockJWT {
     }
 
     private static func parse(_ token: String) throws -> SignedToken {
-        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
-        guard parts.count == 3, let json = decode(parts[0]), let payload = decode(parts[1]), !payload.isEmpty,
-              let raw = decode(parts[2]), let header = try? JSONDecoder().decode(Header.self, from: json),
-              header.alg == "ES384", header.b64 != false, header.crit?.isEmpty != false,
-              let signature = try? P384.Signing.ECDSASignature(rawRepresentation: raw) else {
+        let compact = try CompactJWT(token)
+        guard compact.header.alg == "ES384",
+              let signature = try? P384.Signing.ECDSASignature(rawRepresentation: compact.signature) else {
             throw BedrockError.invalidClientToken
         }
-        let input = Data(parts.prefix(2).joined(separator: ".").utf8)
-        return SignedToken(header: header, payload: payload, signature: signature, input: input)
+        return SignedToken(header: compact.header, payload: compact.payload, signature: signature, input: compact.input)
     }
 
     private struct SignedToken {
-        let header: Header
+        let header: CompactJWT.Header
         let payload: Data
         let signature: P384.Signing.ECDSASignature
         let input: Data
     }
 
-    private struct Header: Decodable {
-        let alg: String
-        let x5u: String?
-        let b64: Bool?
-        let crit: [String]?
-    }
-
-    private static func base64URL(_ data: Data) -> String {
+    static func base64URL(_ data: Data) -> String {
         data.base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
     }
 
-    private static func decode(_ value: Substring) -> Data? {
+    static func decode(_ value: Substring) -> Data? {
         var base64 = value.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
         base64 += String(repeating: "=", count: (4 - base64.utf8.count % 4) % 4)
         guard let data = Data(base64Encoded: base64), base64URL(data) == value else { return nil }
         return data
+    }
+}
+
+struct CompactJWT {
+    struct Header: Decodable {
+        let alg: String
+        let kid: String?
+        let x5u: String?
+        let b64: Bool?
+        let crit: [String]?
+    }
+
+    let header: Header
+    let payload: Data
+    let signature: Data
+    let input: Data
+
+    init(_ token: String) throws {
+        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count == 3, let json = BedrockJWT.decode(parts[0]),
+              let payload = BedrockJWT.decode(parts[1]), !payload.isEmpty,
+              let signature = BedrockJWT.decode(parts[2]),
+              let header = try? JSONDecoder().decode(Header.self, from: json),
+              header.b64 != false, header.crit?.isEmpty != false else { throw BedrockError.invalidClientToken }
+        self.header = header
+        self.payload = payload
+        self.signature = signature
+        input = Data(parts.prefix(2).joined(separator: ".").utf8)
     }
 }
