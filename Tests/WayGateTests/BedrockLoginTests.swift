@@ -83,6 +83,11 @@ func raknetLoginNegotiatesAnEncryptedBedrockSession(_ mode: LoginMode) async thr
     let decryptedStatus = try open.open(status)
     #expect(decryptedStatus == [0xfe, 0xff, 5, 2, 0, 0, 0, 0])
 
+    try await exchangeResourcePack(
+        with: session, client: client, seal: &seal, open: &open,
+        format: mode == .certificateChain ? .legacy : .v26_60
+    )
+
     let message = try BedrockPacket(id: 9, payload: Array(repeating: 50, count: 20_100))
     try await client.send(seal.seal(BedrockBatch.encode([message], framing: .negotiated)))
     let received = try await session.receive()
@@ -92,6 +97,44 @@ func raknetLoginNegotiatesAnEncryptedBedrockSession(_ mode: LoginMode) async thr
     let decryptedReply = try open.open(reply)
     #expect(try BedrockBatch.decode(decryptedReply, framing: .negotiated) == [message])
     await session.close()
+}
+
+private func exchangeResourcePack(
+    with session: BedrockSession, client: RakNetConnection, seal: inout BedrockCipher, open: inout BedrockCipher,
+    format: ResourcePackFormat
+) async throws {
+    func send(_ packets: [BedrockPacket]) async throws {
+        try await client.send(seal.seal(BedrockBatch.encode(packets, framing: .negotiated)))
+    }
+    func receive() async throws -> BedrockPacket {
+        let wire = try #require(try await client.receive())
+        let packets = try BedrockBatch.decode(open.open(wire), framing: .negotiated)
+        try #require(packets.count == 1)
+        return try #require(packets.first)
+    }
+
+    let id = try #require(UUID(uuidString: "11111111-1111-4111-8111-111111111111"))
+    let archive = try ResourcePackArchive(id: id, bytes: Data([1, 2, 3]))
+    let packID = archive.dataInfo.packID
+    let info = ResourcePacksInfo(texturePacks: [.init(id: id, version: "1.0.0", size: 3)])
+    let stack = ResourcePackStack(texturePacks: [.init(id: packID, version: "1.0.0")], baseGameVersion: "1.26.60")
+    let exchange = try ResourcePackNegotiation(info: info, stack: stack, archives: [archive], format: format)
+    async let trailing = session.negotiateResourcePacks(exchange)
+
+    #expect(try await receive() == info.packet(format: format))
+    await #expect(throws: BedrockError.concurrentOperation) { try await session.receive() }
+    try await send([ResourcePackClientResponse(status: .sendPacks, packIDs: [packID]).packet(format: format)])
+    #expect(try await receive() == archive.dataInfo.packet())
+    try await send([ResourcePackChunkRequest(packID: packID, index: 0).packet(format: format)])
+    let chunk = try await receive()
+    #expect(try ResourcePackChunkData(decoding: chunk).data == [1, 2, 3])
+    try await send([ResourcePackClientResponse(status: .allPacksDownloaded).packet(format: format)])
+    #expect(try await receive() == stack.packet(format: format))
+
+    let game = try BedrockPacket(id: 9, payload: [1])
+    try await send([ResourcePackClientResponse(status: .completed).packet(format: format), game])
+    let pending = try await trailing
+    #expect(pending == [game])
 }
 
 @Test func rejectsGuestAndEmptyMultiplayerCredentials() throws {

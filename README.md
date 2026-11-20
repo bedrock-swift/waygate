@@ -19,11 +19,13 @@ A Swift library for the Minecraft: Bedrock Edition protocol.
 - Resource pack metadata, transfer packets, and archive hashing
 - Raw RakNet relay for a fixed upstream
 
-Use `BedrockLoginServer(trust: try .mojang())` with `BedrockListener` to authenticate legacy Bedrock login chains. WayGate checks the client data signature, negotiates encryption and publishes a session with the verified identity. Applications can supply a custom identity verifier and handle resource packs and world entry.
+Use `BedrockLoginServer(trust: try .mojang())` with `BedrockListener` to authenticate legacy Bedrock login chains. WayGate checks the client data signature, negotiates encryption and publishes a session with the verified identity.
 
 Resource pack codecs default to the Bedrock 26.60 layout. Pass `.legacy` when using them with a legacy session.
 
 Use `BedrockLoginServer.multiplayer(keys: try await MinecraftLoginKeys())` for Bedrock 26.60. The key cache verifies multiplayer tokens against Mojang's signing keys and refreshes those keys as they rotate.
+
+After login, pass a `ResourcePackNegotiation` to `BedrockSession.negotiateResourcePacks`. The method returns any packets that followed the client's final confirmation in the same batch.
 
 ## Development
 
