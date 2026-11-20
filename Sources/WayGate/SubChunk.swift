@@ -28,11 +28,16 @@ public struct SubChunk: Equatable, Sendable {
     }
 
     public func encode() throws -> [UInt8] {
-        var bytes = [Self.version, UInt8(layers.count), UInt8(bitPattern: y)]
+        var bytes: [UInt8] = []
+        try append(to: &bytes)
+        return bytes
+    }
+
+    func append(to bytes: inout [UInt8]) throws {
+        bytes.append(contentsOf: [Self.version, UInt8(layers.count), UInt8(bitPattern: y)])
         for layer in layers {
             layer.append(to: &bytes)
             guard bytes.count <= BedrockBatch.maximumBytes else { throw BedrockError.limitExceeded }
         }
-        return bytes
     }
 }
