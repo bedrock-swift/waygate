@@ -6,16 +6,35 @@ public struct BedrockLoginServer: Sendable {
     private let verify: @Sendable (LoginRequest) async throws -> (key: [UInt8], identity: BedrockIdentity?)
 
     public init(protocolVersion: Int32 = 819, verify: @escaping @Sendable (LoginRequest) async throws -> [UInt8]) {
-        self.protocolVersion = protocolVersion
-        self.verify = { (try await verify($0), nil) }
+        self.init(protocolVersion: protocolVersion, verification: { (try await verify($0), nil) })
     }
 
     public init(protocolVersion: Int32 = 819, trust: LegacyLoginTrust) {
-        self.protocolVersion = protocolVersion
-        verify = { request in
+        self.init(protocolVersion: protocolVersion, verification: { request in
             let identity = try trust.verify(request)
             return (identity.publicKeyDER, identity)
-        }
+        })
+    }
+
+    public static func multiplayer(
+        protocolVersion: Int32 = 2225, verifying verifyToken: @escaping @Sendable (String) async throws -> BedrockIdentity
+    ) -> BedrockLoginServer {
+        BedrockLoginServer(protocolVersion: protocolVersion, verification: { request in
+            let identity = try await verifyToken(request.multiplayerToken())
+            return (identity.publicKeyDER, identity)
+        })
+    }
+
+    public static func multiplayer(protocolVersion: Int32 = 2225, keys: MinecraftLoginKeys) -> BedrockLoginServer {
+        multiplayer(protocolVersion: protocolVersion, verifying: keys.verify)
+    }
+
+    private init(
+        protocolVersion: Int32,
+        verification: @escaping @Sendable (LoginRequest) async throws -> (key: [UInt8], identity: BedrockIdentity?)
+    ) {
+        self.protocolVersion = protocolVersion
+        verify = verification
     }
 
     public func accept(on transport: any BedrockTransport, timeout: Duration = .seconds(10)) async throws -> BedrockSession {
@@ -84,9 +103,11 @@ public struct BedrockLoginServer: Sendable {
         guard packet.id == id else { throw BedrockError.unexpectedPacket(packet.id) }
         return packet
     }
-private func sendStatus(_ status: PlayStatus, on transport: any BedrockTransport) async throws {
-try await transport.send(BedrockBatch.encode([try status.packet()]))
-}
+
+    private func sendStatus(_ status: PlayStatus, on transport: any BedrockTransport) async throws {
+        try await transport.send(BedrockBatch.encode([try status.packet()]))
+    }
+
     private static func handshake(with remote: P384.KeyAgreement.PublicKey) throws -> (packet: BedrockPacket, key: [UInt8]) {
         let signing = P384.Signing.PrivateKey()
         let agreement = try P384.KeyAgreement.PrivateKey(rawRepresentation: signing.rawRepresentation)

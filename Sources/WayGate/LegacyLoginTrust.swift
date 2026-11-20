@@ -6,6 +6,13 @@ public struct BedrockIdentity: Equatable, Sendable {
     public let xuid: String
     public let displayName: String
     public let publicKeyDER: [UInt8]
+
+    public init(id: UUID, xuid: String, displayName: String, publicKeyDER: [UInt8]) {
+        self.id = id
+        self.xuid = xuid
+        self.displayName = displayName
+        self.publicKeyDER = publicKeyDER
+    }
 }
 
 public struct LegacyLoginTrust: Sendable {
