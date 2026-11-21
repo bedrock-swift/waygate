@@ -61,18 +61,14 @@ public struct BedrockLoginServer: Sendable {
     }
 
     private func negotiate(on transport: any BedrockTransport) async throws -> BedrockSession {
-        let settings = try await packet(id: 193, on: transport, framing: .initial)
-        var version = BedrockReader(settings.payload[...])
-        let requested = try version.protocolVersion()
-        guard version.isEmpty else { throw BedrockError.malformed }
+        let settings = try await packet(id: RequestNetworkSettings.packetID, on: transport, framing: .initial)
+        let requested = try RequestNetworkSettings(decoding: settings).protocolVersion
         if requested != protocolVersion {
             try await sendStatus(requested < protocolVersion ? .failedClient : .failedServer, on: transport)
             throw BedrockError.unsupportedProtocol(requested)
         }
         let threshold = UInt16(BedrockBatch.compressionThreshold)
-        let response = try BedrockPacket(id: 143, payload: [
-            UInt8(truncatingIfNeeded: threshold), UInt8(threshold >> 8), 1, 0, 0, 0, 0, 0, 0, 0
-        ]) // snappy and no client throttling
+        let response = try NetworkSettings(compressionThreshold: threshold, compression: .snappy).packet()
         try await transport.send(BedrockBatch.encode([response]))
 
         let login = try await LoginRequest(decoding: packet(id: 1, on: transport, framing: .negotiated))
