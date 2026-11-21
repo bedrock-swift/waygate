@@ -38,13 +38,13 @@ public struct SetSpawnPosition: Equatable, Sendable {
     }
 }
 
-private extension BedrockReader {
+extension BedrockReader {
     mutating func blockPosition() throws -> SIMD3<Int32> {
         try SIMD3(varInt(), varInt(), varInt())
     }
 }
 
-private extension [UInt8] {
+extension [UInt8] {
     mutating func appendBlockPosition(_ position: SIMD3<Int32>) {
         appendVarInt(position.x)
         appendVarInt(position.y)
