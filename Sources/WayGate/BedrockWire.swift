@@ -19,7 +19,6 @@ public enum ResourcePackFormat: Sendable {
     case legacy
     case v26_60
 }
-
 struct BedrockReader {
     private var bytes: ArraySlice<UInt8>
 
@@ -40,6 +39,17 @@ struct BedrockReader {
             let byte = try byte()
             guard shift < 28 || byte < 16 else { throw BedrockError.malformed }
             value |= UInt32(byte & 0x7f) << shift
+            if byte & 0x80 == 0 { return value }
+        }
+        throw BedrockError.malformed
+    }
+
+    mutating func varULong() throws -> UInt64 {
+        var value: UInt64 = 0
+        for shift in stride(from: 0, through: 63, by: 7) {
+            let byte = try byte()
+            guard shift < 63 || byte < 2 else { throw BedrockError.malformed }
+            value |= UInt64(byte & 0x7f) << shift
             if byte & 0x80 == 0 { return value }
         }
         throw BedrockError.malformed
@@ -106,6 +116,15 @@ extension [UInt8] {
     }
 
     mutating func appendVarUInt(_ value: UInt32) {
+        var remaining = value
+        while remaining >= 128 {
+            append(UInt8(remaining & 127) | 128)
+            remaining >>= 7
+        }
+        append(UInt8(remaining))
+    }
+
+    mutating func appendVarULong(_ value: UInt64) {
         var remaining = value
         while remaining >= 128 {
             append(UInt8(remaining & 127) | 128)
