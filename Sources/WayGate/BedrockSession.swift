@@ -20,7 +20,7 @@ public actor BedrockSession {
         case started(WorldIdentity)
         case readyToSpawn(WorldIdentity, radius: Int32)
         case awaitingInitialization(UInt64)
-        case spawned
+        case spawned(UInt64)
     }
 
     private let transport: any BedrockTransport
@@ -159,7 +159,7 @@ public actor BedrockSession {
     }
 
     private func receiveMatching<Value>(
-        _ id: UInt16, pendingPackets: [BedrockPacket], decode: (BedrockPacket) throws -> Value
+        _ id: UInt16, pendingPackets: [BedrockPacket], decode: (BedrockPacket) throws -> Value?
     ) async throws -> (Value, [BedrockPacket]) {
         var batch = pendingPackets
         var deferred: [BedrockPacket] = []
@@ -167,8 +167,9 @@ public actor BedrockSession {
         while true {
             var match: Value?
             for packet in batch {
-                if match == nil, packet.id == id, packet.sender == 0, packet.target == 0 {
-                    match = try decode(packet)
+                                if match == nil, packet.id == id, packet.sender == 0, packet.target == 0,
+                   let value = try decode(packet) {
+                    match = value
                     continue
                 }
                 guard deferred.count < BedrockBatch.maximumPackets, packet.payload.count <= remainingBytes else {
@@ -239,12 +240,30 @@ public actor BedrockSession {
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
         guard case .awaitingInitialization(let runtimeID) = worldState else { throw BedrockError.invalidSessionState }
         let (_, deferred) = try await runExchange(timeout: timeout) {
-            try await self.receiveMatching(SetLocalPlayerAsInitialized.packetID, pendingPackets: pendingPackets) {
-                let acknowledgement = try SetLocalPlayerAsInitialized(decoding: $0)
+            try await self.receiveMatching(SetLocalPlayerAsInitialized.packetID, pendingPackets: pendingPackets) { packet -> Void? in
+                let acknowledgement = try SetLocalPlayerAsInitialized(decoding: packet)
                 guard acknowledgement.entityRuntimeID == runtimeID else { throw BedrockError.malformed }
+                return ()
             }
         }
-        worldState = .spawned
+        worldState = .spawned(runtimeID)
+        return deferred
+    }
+
+    public func waitForDimensionChange(
+        pendingPackets: [BedrockPacket] = [], timeout: Duration = .seconds(15)
+    ) async throws -> [BedrockPacket] {
+        guard !closed else { throw BedrockError.closed }
+        guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
+        guard case .spawned(let runtimeID) = worldState else { throw BedrockError.invalidSessionState }
+        let (_, deferred) = try await runExchange(timeout: timeout) {
+            try await self.receiveMatching(PlayerAction.packetID, pendingPackets: pendingPackets) { packet -> Void? in
+                let action = try PlayerAction(decoding: packet)
+                guard action.action == PlayerAction.dimensionChangeDone else { return nil }
+                guard action.runtimeID == runtimeID else { throw BedrockError.malformed }
+                return ()
+            }
+        }
         return deferred
     }
 

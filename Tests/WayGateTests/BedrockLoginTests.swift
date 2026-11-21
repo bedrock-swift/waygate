@@ -264,13 +264,16 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
     let radiusRequest = try RequestChunkRadius(radius: 18, maximumRadius: 24).packet()
     let nextPacket = try BedrockPacket(id: 9, payload: [1])
     let ack = try SetLocalPlayerAsInitialized(entityRuntimeID: scenario == .wrongRuntimeID ? 2 : 1).packet()
+    let jump = try PlayerAction(runtimeID: 1, action: 8).packet()
+    let dimensionDone = try PlayerAction(runtimeID: 1, action: PlayerAction.dimensionChangeDone).packet()
     let transport = LoginTransport([
         try BedrockBatch.encode([settings], transport: .nethernet),
         try BedrockBatch.encode([request], framing: .negotiated, transport: .nethernet),
         try BedrockBatch.encode([packResponse], framing: .negotiated, transport: .nethernet),
         try BedrockBatch.encode([packComplete], framing: .negotiated, transport: .nethernet),
         try BedrockBatch.encode([radiusRequest, nextPacket], framing: .negotiated, transport: .nethernet),
-        try BedrockBatch.encode([ack, nextPacket], framing: .negotiated, transport: .nethernet)
+        try BedrockBatch.encode([ack, nextPacket], framing: .negotiated, transport: .nethernet),
+        try BedrockBatch.encode([jump, dimensionDone, nextPacket], framing: .negotiated, transport: .nethernet)
     ])
     let key = Array(authenticatedKey.derRepresentation)
 
@@ -330,6 +333,8 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
         } else {
             let resumed = try await session.waitForSpawn(pendingPackets: radius.pendingPackets)
             #expect(resumed == [deferred, nextPacket, nextPacket])
+            let afterDimensionChange = try await session.waitForDimensionChange(pendingPackets: resumed)
+            #expect(afterDimensionChange == [deferred, nextPacket, nextPacket, jump, nextPacket])
         }
         await session.close()
     } else {
