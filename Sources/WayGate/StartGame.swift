@@ -349,6 +349,9 @@ private extension BedrockReader {
         throw BedrockError.malformed
     }
 
+}
+
+extension BedrockReader {
     mutating func float32() throws -> Float {
         Float(bitPattern: try littleEndian(UInt32.self))
     }
