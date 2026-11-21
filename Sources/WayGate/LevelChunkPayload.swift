@@ -12,6 +12,24 @@ public struct LevelChunkPayload: Equatable, Sendable {
         self.blockEntities = blockEntities
     }
 
+    public init(subChunks: [SubChunk], biomes: [PalettedStorage], blockEntityCompounds: [NetworkNBT]) throws {
+        var bytes: [UInt8] = []
+        for compound in blockEntityCompounds {
+            guard compound.bytes.count < BedrockBatch.maximumBytes - bytes.count else {
+                throw BedrockError.limitExceeded
+            }
+            bytes.append(contentsOf: compound.bytes)
+        }
+        try self.init(subChunks: subChunks, biomes: biomes, blockEntities: bytes)
+    }
+
+    public func decodeBlockEntities() throws -> [NetworkNBT] {
+        var reader = BedrockReader(blockEntities[...])
+        var compounds: [NetworkNBT] = []
+        while !reader.isEmpty { compounds.append(try NetworkNBT(reading: &reader)) }
+        return compounds
+    }
+
     public init(decoding bytes: [UInt8], subChunkCount: UInt32, biomeCount: Int) throws {
         guard (1...64).contains(biomeCount), subChunkCount <= UInt32(biomeCount) else {
             throw BedrockError.malformed

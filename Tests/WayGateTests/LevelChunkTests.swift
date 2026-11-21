@@ -4,15 +4,20 @@ import WayGate
 @Test func assemblesSubChunksBiomesAndBlockEntities() throws {
     let lower = try SubChunk(y: -4, layers: [.init(uniform: 3)])
     let upper = try SubChunk(y: -3, layers: [])
+    let named = try NetworkNBT(bytes: [10, 1, 116, 0])
     let chunk = try LevelChunkPayload(
         subChunks: [lower, upper], biomes: [.init(uniform: 7), .init(uniform: 7), .init(uniform: 8)],
-        blockEntities: [0x0a, 0, 0]
+        blockEntityCompounds: [.empty, named]
     )
-    let wire: [UInt8] = [9, 1, 0xfc, 1, 6, 9, 0, 0xfd, 1, 14, 0xff, 1, 16, 0, 0x0a, 0, 0]
+    let wire: [UInt8] = [9, 1, 0xfc, 1, 6, 9, 0, 0xfd, 1, 14, 0xff, 1, 16, 0, 10, 0, 0, 10, 1, 116, 0]
     #expect(try chunk.encode() == wire)
     let packet = try LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 2, payload: chunk.encode()).packet()
     let decoded = try LevelChunk(decoding: packet)
-    #expect(try LevelChunkPayload(decoding: decoded.payload, subChunkCount: decoded.subChunkCount, biomeCount: 3) == chunk)
+    let payload = try LevelChunkPayload(decoding: decoded.payload, subChunkCount: decoded.subChunkCount, biomeCount: 3)
+    #expect(payload == chunk)
+    #expect(try payload.decodeBlockEntities() == [.empty, named])
+    let incomplete = try LevelChunkPayload(decoding: Array(wire.dropLast()), subChunkCount: 2, biomeCount: 3)
+    #expect(throws: BedrockError.malformed) { try incomplete.decodeBlockEntities() }
     #expect(throws: BedrockError.malformed) {
         try LevelChunkPayload(decoding: [0xff, 0], subChunkCount: 0, biomeCount: 1)
     }
