@@ -242,3 +242,50 @@ private func makeLoginPacket(protocolVersion: Int32, envelope: Data, clientToken
     payload += request
     return try BedrockPacket(id: 1, payload: payload)
 }
+
+@Test(arguments: [true, false])
+func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async throws {
+    let signing = P384.Signing.PrivateKey()
+    let authenticatedKey = matching ? signing.publicKey : P384.Signing.PrivateKey().publicKey
+    let clientData = Data(#"{"DeviceOS":7}"#.utf8)
+    let clientToken = try BedrockJWT.sign(clientData, with: signing)
+    let login = BedrockLoginServer(protocolVersion: 2225) { _ in Array(signing.publicKey.derRepresentation) }
+    let envelope = Data(#"{"AuthenticationType":0,"Token":"header.payload.signature"}"#.utf8)
+    let request = try makeLoginPacket(protocolVersion: 2225, envelope: envelope, clientToken: clientToken)
+    let settings = try BedrockPacket(id: 193, payload: [0, 0, 8, 0xb1])
+    let transport = LoginTransport([
+        try BedrockBatch.encode([settings], transport: .nethernet),
+        try BedrockBatch.encode([request], framing: .negotiated, transport: .nethernet)
+    ])
+    let key = Array(authenticatedKey.derRepresentation)
+
+    if matching {
+        let session = try await login.acceptNetherNet(on: transport, authenticatedKey: key)
+        #expect(session.clientData == clientData)
+        let replies = await transport.replies
+        try #require(replies.count == 2)
+        #expect(replies[0] == [12, 0x8f, 1, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0])
+        #expect(replies[1] == [0xff, 5, 2, 0, 0, 0, 0])
+        await session.close()
+    } else {
+        await #expect(throws: BedrockError.untrustedIdentity) {
+            try await login.acceptNetherNet(on: transport, authenticatedKey: key)
+        }
+        #expect(await transport.replies.count == 1)
+        #expect(await transport.closed)
+    }
+}
+
+private actor LoginTransport: BedrockTransport {
+    private var requests: ArraySlice<[UInt8]>
+    private(set) var replies: [[UInt8]] = []
+    private(set) var closed = false
+
+    init(_ requests: [[UInt8]]) {
+        self.requests = requests[...]
+    }
+
+    func receive() async throws -> [UInt8]? { requests.popFirst() }
+    func send(_ payload: [UInt8]) async throws { replies.append(payload) }
+    func close() async { closed = true }
+}

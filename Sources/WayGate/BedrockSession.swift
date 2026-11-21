@@ -11,8 +11,9 @@ extension RakNetConnection: BedrockTransport {}
 
 public actor BedrockSession {
     private let transport: any BedrockTransport
-    private var incoming: BedrockCipher
-    private var outgoing: BedrockCipher
+    private let batchTransport: BedrockBatch.Transport
+    private var incoming: BedrockCipher?
+    private var outgoing: BedrockCipher?
     private var receiving = false
     private var sending = false
     private var negotiatingPacks = false
@@ -25,14 +26,18 @@ public actor BedrockSession {
     public private(set) var clientCacheEnabled: Bool?
 
     init(
-        transport: any BedrockTransport, login: LoginRequest, identity: BedrockIdentity?, clientData: Data, key: [UInt8]
+        transport: any BedrockTransport, login: LoginRequest, identity: BedrockIdentity?, clientData: Data,
+        batchTransport: BedrockBatch.Transport, key: [UInt8]?
     ) throws {
         self.transport = transport
         self.login = login
         self.identity = identity
         self.clientData = clientData
-        incoming = try BedrockCipher(key: key)
-        outgoing = try BedrockCipher(key: key)
+        self.batchTransport = batchTransport
+        if let key {
+            incoming = try BedrockCipher(key: key)
+            outgoing = try BedrockCipher(key: key)
+        }
     }
 
     public func receive() async throws -> [BedrockPacket]? {
@@ -50,7 +55,7 @@ public actor BedrockSession {
                 await close()
                 return nil
             }
-            return try BedrockBatch.decode(incoming.open(bytes), framing: .negotiated)
+            return try BedrockBatch.decode(incoming?.open(bytes) ?? bytes, framing: .negotiated, transport: batchTransport)
         } catch {
             await close()
             throw error
@@ -65,11 +70,11 @@ public actor BedrockSession {
     private func sendBatch(_ packets: [BedrockPacket]) async throws {
         guard !closed else { throw BedrockError.closed }
         guard !sending else { throw BedrockError.concurrentOperation }
-        let bytes = try BedrockBatch.encode(packets, framing: .negotiated)
+        let bytes = try BedrockBatch.encode(packets, framing: .negotiated, transport: batchTransport)
         sending = true
         defer { sending = false }
         do {
-            try await transport.send(outgoing.seal(bytes))
+            try await transport.send(outgoing?.seal(bytes) ?? bytes)
         } catch {
             await close()
             throw error
