@@ -17,7 +17,7 @@ public struct ServerJoinInformation: Equatable, Sendable {
             self.creatorID = creatorID
         }
 
-        fileprivate init(reading reader: inout BedrockReader) throws {
+        init(reading reader: inout BedrockReader) throws {
             experienceID = try reader.uuid()
             experienceName = try reader.string()
             experienceWorldID = try reader.optional { try $0.uuid() }
@@ -28,7 +28,7 @@ public struct ServerJoinInformation: Equatable, Sendable {
             serverID = try reader.optional { try $0.string() }
         }
 
-        fileprivate func append(to bytes: inout [UInt8]) throws {
+        func append(to bytes: inout [UInt8]) throws {
             bytes.appendUUID(experienceID)
             try bytes.appendString(experienceName)
             bytes.appendOptional(experienceWorldID) { $0.appendUUID($1) }
