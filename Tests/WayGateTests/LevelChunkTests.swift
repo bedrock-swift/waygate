@@ -53,3 +53,20 @@ import WayGate
     )
     #expect(throws: BedrockError.limitExceeded) { try tooManyHashes.packet() }
 }
+
+@Test func validatesChunkRequestLimitsAndCacheMetadata() throws {
+    for limit: Int32 in [-2, 65] {
+        let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, subChunkLimit: limit, payload: [])
+        #expect(throws: BedrockError.malformed) { try chunk.packet() }
+    }
+    let invalidLimit = try BedrockPacket(id: 58, payload: [0, 0, 0, 0, 1, 3, 0, 0, 0, 0])
+    #expect(throws: BedrockError.malformed) { try LevelChunk(decoding: invalidLimit) }
+
+    let disabledCache = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, blobHashes: [0], payload: [])
+    #expect(throws: BedrockError.malformed) { try disabledCache.packet() }
+    let invalidCache = try BedrockPacket(id: 58, payload: [0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    #expect(throws: BedrockError.malformed) { try LevelChunk(decoding: invalidCache) }
+
+    let unlimited = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, subChunkLimit: -1, payload: [])
+    #expect(try LevelChunk(decoding: unlimited.packet()) == unlimited)
+}

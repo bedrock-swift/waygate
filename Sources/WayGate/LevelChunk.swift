@@ -37,9 +37,11 @@ public struct LevelChunk: Equatable, Sendable {
         subChunkCount = try reader.varUInt()
         guard subChunkCount <= Self.maximumSubChunks else { throw BedrockError.limitExceeded }
         subChunkLimit = try reader.bool() ? try reader.varInt() : nil
+        if let subChunkLimit, !(-1...64).contains(subChunkLimit) { throw BedrockError.malformed }
         cacheEnabled = try reader.bool()
         let hashCount = try reader.varUInt()
         guard hashCount <= Self.maximumSubChunks + 1 else { throw BedrockError.limitExceeded }
+        guard cacheEnabled || hashCount == 0 else { throw BedrockError.malformed }
         blobHashes = try reader.list(count: hashCount, minimumElementSize: 8) {
             try $0.littleEndian(UInt64.self)
         }
@@ -52,6 +54,8 @@ public struct LevelChunk: Equatable, Sendable {
         guard subChunkCount <= Self.maximumSubChunks, blobHashes.count <= Self.maximumSubChunks + 1 else {
             throw BedrockError.limitExceeded
         }
+        if let subChunkLimit, !(-1...64).contains(subChunkLimit) { throw BedrockError.malformed }
+        guard cacheEnabled || blobHashes.isEmpty else { throw BedrockError.malformed }
         var bytes: [UInt8] = []
         bytes.appendVarInt(x)
         bytes.appendVarInt(z)
