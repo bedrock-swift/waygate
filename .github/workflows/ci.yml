@@ -18,3 +18,29 @@ jobs:
         with:
           persist-credentials: false
       - run: swift test
+
+  libdatachannel:
+    runs-on: ubuntu-24.04
+    container: swift:6.4.2-noble
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: apt-get update && apt-get install -y --no-install-recommends cmake g++ libssl-dev ninja-build
+      - uses: actions/checkout@v4
+        with:
+          repository: paullouisageneau/libdatachannel
+          ref: c6696d157b5612df2a741d9a03b192b47ab6cefb
+          submodules: recursive
+          persist-credentials: false
+          path: .native/libdatachannel
+      - name: Build libdatachannel
+        run: |
+          cmake -S .native/libdatachannel -B .native/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DNO_MEDIA=ON -DNO_WEBSOCKET=ON \
+            -DNO_EXAMPLES=ON -DNO_TESTS=ON
+          cmake --build .native/build --parallel 2
+      - name: Test Bedrock spawn over NetherNet
+        env:
+          NETHERNET_TEST_LIBRARY: ${{ github.workspace }}/.native/build/libdatachannel.so
+        run: swift test --filter nativeNetherNetConnectionCarriesLoginAndSpawn
