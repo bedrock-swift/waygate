@@ -108,7 +108,7 @@ public struct ResourcePacksInfo: Equatable, Sendable {
     }
 }
 
-private extension BedrockReader {
+extension BedrockReader {
     mutating func uuid() throws -> UUID {
         let bytes = Array(try read(16))
         return UUID(uuid: (
@@ -118,7 +118,7 @@ private extension BedrockReader {
     }
 }
 
-private extension [UInt8] {
+extension [UInt8] {
     mutating func appendUUID(_ id: UUID) {
         Swift.withUnsafeBytes(of: id.uuid) { bytes in
             append(contentsOf: bytes.prefix(8).reversed())
