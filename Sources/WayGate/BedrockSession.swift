@@ -167,7 +167,12 @@ public actor BedrockSession {
         while true {
             var match: Value?
             for packet in batch {
-                                if match == nil, packet.id == id, packet.sender == 0, packet.target == 0,
+                if packet.id == NetworkStackLatency.packetID,
+                   let response = try NetworkStackLatency.response(to: packet) {
+                    try await sendBatch([response])
+                    continue
+                }
+                if match == nil, packet.id == id, packet.sender == 0, packet.target == 0,
                    let value = try decode(packet) {
                     match = value
                     continue
@@ -189,6 +194,10 @@ public actor BedrockSession {
         try await sendBatch([exchange.begin()])
         while let incoming = try await receiveBatch() {
             for (index, packet) in incoming.enumerated() {
+                if packet.id == NetworkStackLatency.packetID {
+                    if let response = try NetworkStackLatency.response(to: packet) { try await sendBatch([response]) }
+                    continue
+                }
                 for response in try exchange.receive(packet) { try await sendBatch([response]) }
                 if exchange.isComplete {
                     clientCacheEnabled = exchange.clientCacheEnabled

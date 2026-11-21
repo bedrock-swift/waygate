@@ -16,6 +16,13 @@ public struct NetworkStackLatency: Equatable, Sendable {
         guard reader.isEmpty else { throw BedrockError.malformed }
     }
 
+    public static func response(to request: BedrockPacket) throws -> BedrockPacket? {
+        let latency = try Self(decoding: request)
+        guard latency.needsResponse else { return nil }
+        return try Self(timestamp: latency.timestamp, needsResponse: false)
+            .packet(sender: request.target, target: request.sender)
+    }
+
     public func packet(sender: UInt8 = 0, target: UInt8 = 0) throws -> BedrockPacket {
         var payload: [UInt8] = []
         payload.appendLittleEndian(timestamp)

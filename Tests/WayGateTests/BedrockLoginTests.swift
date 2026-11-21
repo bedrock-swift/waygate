@@ -273,7 +273,10 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
         try BedrockBatch.encode([packComplete], framing: .negotiated, transport: .nethernet),
         try BedrockBatch.encode([radiusRequest, nextPacket], framing: .negotiated, transport: .nethernet),
         try BedrockBatch.encode([ack, nextPacket], framing: .negotiated, transport: .nethernet),
-        try BedrockBatch.encode([jump, dimensionDone, nextPacket], framing: .negotiated, transport: .nethernet)
+        try BedrockBatch.encode([
+            jump, NetworkStackLatency(timestamp: 42, needsResponse: true).packet(sender: 1),
+            dimensionDone, NetworkStackLatency(timestamp: 43, needsResponse: false).packet(), nextPacket
+        ], framing: .negotiated, transport: .nethernet)
     ])
     let key = Array(authenticatedKey.derRepresentation)
 
@@ -334,7 +337,11 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
             let resumed = try await session.waitForSpawn(pendingPackets: radius.pendingPackets)
             #expect(resumed == [deferred, nextPacket, nextPacket])
             let afterDimensionChange = try await session.waitForDimensionChange(pendingPackets: resumed)
-            #expect(afterDimensionChange == [deferred, nextPacket, nextPacket, jump, nextPacket])
+            let latencyReply = try #require(await transport.replies.last)
+            let reply = try NetworkStackLatency(timestamp: 42, needsResponse: false).packet(target: 1)
+            #expect(try BedrockBatch.decode(latencyReply, framing: .negotiated, transport: .nethernet) == [reply])
+            let pendingReply = try NetworkStackLatency(timestamp: 43, needsResponse: false).packet()
+            #expect(afterDimensionChange == [deferred, nextPacket, nextPacket, jump, pendingReply, nextPacket])
         }
         await session.close()
     } else {
