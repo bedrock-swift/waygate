@@ -116,6 +116,7 @@ public struct StartGame: Equatable, Sendable {
     public var clientSideGeneration = false
     public var useBlockNetworkIDHashes = false
     public var serverAuthoritativeSound = false
+    public var serverJoinInformation: ServerJoinInformation?
     public var serverID = ""
     public var scenarioID = ""
     public var worldID = ""
@@ -125,6 +126,110 @@ public struct StartGame: Equatable, Sendable {
         self.player = player
         self.world = world
         self.gameVersion = gameVersion
+    }
+
+    public init(decoding packet: BedrockPacket) throws {
+        guard packet.id == Self.packetID else { throw BedrockError.unexpectedPacket(packet.id) }
+        guard packet.payload.count <= BedrockBatch.maximumBytes else { throw BedrockError.limitExceeded }
+        var reader = BedrockReader(packet.payload[...])
+        let unique = try reader.actorID()
+        let uniqueID = Int64(bitPattern: (unique >> 1) ^ (0 &- (unique & 1)))
+        let runtime = try reader.actorID()
+        let mode = try reader.varInt()
+        let position = try SIMD3(reader.float32(), reader.float32(), reader.float32())
+        let player = try Player(
+            uniqueID: uniqueID, runtimeID: runtime, gameMode: mode, position: position,
+            pitch: reader.float32(), yaw: reader.float32()
+        )
+        var world = World(name: "")
+        world.seed = Int64(bitPattern: try reader.littleEndian(UInt64.self))
+        world.spawnBiomeType = Int16(bitPattern: try reader.littleEndian(UInt16.self))
+        world.biomeName = try reader.string()
+        world.dimension = try reader.varInt()
+        world.generator = try reader.varInt()
+        world.gameMode = try reader.varInt()
+        world.hardcore = try reader.bool()
+        world.difficulty = try reader.varInt()
+        world.spawn = try reader.blockPosition()
+        world.achievementsDisabled = try reader.bool()
+        world.editorWorldType = try reader.varInt()
+        world.createdInEditor = try reader.bool()
+        world.exportedFromEditor = try reader.bool()
+        world.editorLevelMigrationVersion = Int8(bitPattern: try reader.byte())
+        world.dayCycleLockTime = try reader.varInt()
+        world.educationEditionOffer = try reader.varUInt()
+        world.educationFeaturesEnabled = try reader.bool()
+        world.educationProductID = try reader.string()
+        world.rainLevel = Float(bitPattern: try reader.littleEndian(UInt32.self))
+        world.lightningLevel = Float(bitPattern: try reader.littleEndian(UInt32.self))
+        world.confirmedPlatformLockedContent = try reader.bool()
+        world.multiplayerGame = try reader.bool()
+        world.lanBroadcastEnabled = try reader.bool()
+        world.xboxBroadcastMode = try reader.varInt()
+        world.platformBroadcastMode = try reader.varInt()
+        world.commandsEnabled = try reader.bool()
+        world.texturePackRequired = try reader.bool()
+        let rules = try reader.varUInt()
+        world.gameRules = try reader.list(count: rules, minimumElementSize: 3) { try GameRule(reading: &$0) }
+        let experiments = try reader.littleEndian(UInt32.self)
+        world.experiments = try reader.list(count: experiments, minimumElementSize: 2) {
+            try ResourcePackStack.Experiment(name: $0.string(), enabled: $0.bool())
+        }
+        world.experimentsPreviouslyToggled = try reader.bool()
+        world.bonusChestEnabled = try reader.bool()
+        world.startWithMapEnabled = try reader.bool()
+        world.playerPermissions = try reader.byte()
+        world.serverChunkTickRadius = Int32(bitPattern: try reader.littleEndian(UInt32.self))
+        world.hasLockedBehaviourPack = try reader.bool()
+        world.hasLockedTexturePack = try reader.bool()
+        world.fromLockedWorldTemplate = try reader.bool()
+        world.msaGamerTagsOnly = try reader.bool()
+        world.fromWorldTemplate = try reader.bool()
+        world.worldTemplateSettingsLocked = try reader.bool()
+        world.onlySpawnV1Villagers = try reader.bool()
+        world.personaDisabled = try reader.bool()
+        world.customSkinsDisabled = try reader.bool()
+        world.emoteChatMuted = try reader.bool()
+        world.baseGameVersion = try reader.string()
+        world.limitedWorldWidth = Int32(bitPattern: try reader.littleEndian(UInt32.self))
+        world.limitedWorldDepth = Int32(bitPattern: try reader.littleEndian(UInt32.self))
+        world.newNether = try reader.bool()
+        world.educationResourceButtonName = try reader.string()
+        world.educationResourceLink = try reader.string()
+        world.forceExperimentalGameplay = try reader.optional { try $0.bool() }
+        world.chatRestrictionLevel = try reader.byte()
+        world.disablePlayerInteractions = try reader.bool()
+        world.serverEditorConnectionPolicy = try reader.varInt()
+        world.allowAnonymousBlockDropsInEditorWorlds = try reader.bool()
+        world.levelID = try reader.string()
+        world.name = try reader.string()
+        world.templateContentIdentity = try reader.string()
+        world.trial = try reader.bool()
+
+        self.init(player: player, world: world)
+        rewindHistorySize = try reader.varInt()
+        serverAuthoritativeBlockBreaking = try reader.bool()
+        time = Int64(bitPattern: try reader.littleEndian(UInt64.self))
+        enchantmentSeed = try reader.varInt()
+        let count = try reader.varUInt()
+        blocks = try reader.list(count: count, minimumElementSize: 4) {
+            try Block(name: $0.string(), properties: NetworkNBT(reading: &$0))
+        }
+        multiplayerCorrelationID = try reader.string()
+        serverAuthoritativeInventory = try reader.bool()
+        gameVersion = try reader.string()
+        propertyData = try NetworkNBT(reading: &reader)
+        serverBlockStateChecksum = try reader.littleEndian(UInt64.self)
+        worldTemplateID = try reader.uuid()
+        clientSideGeneration = try reader.bool()
+        useBlockNetworkIDHashes = try reader.bool()
+        serverAuthoritativeSound = try reader.bool()
+        serverJoinInformation = try reader.optional { try ServerJoinInformation(reading: &$0) }
+        serverID = try reader.string()
+        scenarioID = try reader.string()
+        worldID = try reader.string()
+        ownerID = try reader.string()
+        guard reader.isEmpty else { throw BedrockError.malformed }
     }
 
     public func packet(sender: UInt8 = 0, target: UInt8 = 0) throws -> BedrockPacket {
@@ -223,12 +328,29 @@ public struct StartGame: Equatable, Sendable {
         payload.append(clientSideGeneration ? 1 : 0)
         payload.append(useBlockNetworkIDHashes ? 1 : 0)
         payload.append(serverAuthoritativeSound ? 1 : 0)
-        payload.append(0) // no server join information
+        try payload.appendOptional(serverJoinInformation) { try $1.append(to: &$0) }
         try payload.appendString(serverID)
         try payload.appendString(scenarioID)
         try payload.appendString(worldID)
         try payload.appendString(ownerID)
         return try BedrockPacket(id: Self.packetID, sender: sender, target: target, payload: payload)
+    }
+}
+
+private extension BedrockReader {
+    mutating func actorID() throws -> UInt64 {
+        var value: UInt64 = 0
+        for shift in stride(from: 0, through: 63, by: 7) {
+            let byte = try byte()
+            guard shift < 63 || byte <= 1 else { throw BedrockError.malformed }
+            value |= UInt64(byte & 0x7f) << shift
+            if byte < 128 { return value }
+        }
+        throw BedrockError.malformed
+    }
+
+    mutating func float32() throws -> Float {
+        Float(bitPattern: try littleEndian(UInt32.self))
     }
 }
 

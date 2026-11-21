@@ -36,4 +36,16 @@ import WayGate
     ]
     let packet = try BedrockPacket(id: 11, payload: wire)
     #expect(try start.packet() == packet)
+    #expect(try StartGame(decoding: packet) == start)
+    let truncated = try BedrockPacket(id: 11, payload: Array(wire.dropLast()))
+    #expect(throws: BedrockError.malformed) { try StartGame(decoding: truncated) }
+}
+
+@Test func preservesOptionalServerJoinInformation() throws {
+    var start = StartGame(player: .init(uniqueID: .min, runtimeID: .max), world: .init(name: "Test"))
+    start.serverJoinInformation = .init(store: .init(id: "id", name: "name"), presence: .init(richPresenceID: "live"))
+    let packet = try start.packet()
+    let suffix: [UInt8] = [1, 0, 1, 2, 105, 100, 4, 110, 97, 109, 101, 1, 1, 4, 108, 105, 118, 101, 0, 0, 0, 0]
+    #expect(Array(packet.payload.suffix(suffix.count)) == suffix)
+    #expect(try StartGame(decoding: packet) == start)
 }
