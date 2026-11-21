@@ -2,8 +2,13 @@ name: Discord card
 
 on:
   schedule:
-    - cron: '13,43 * * * *'
+    - cron: '6,16,26,36,46,56 * * * *'
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/discord-card.yml
+      - assets/discord.png
 
 permissions:
   contents: write
