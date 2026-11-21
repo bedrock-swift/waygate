@@ -27,7 +27,17 @@ private actor NetherNetTransport: BedrockTransport {
     }
 
     func send(_ payload: [UInt8]) async throws {
-        try await connection.send(payload)
+        let deadline = ContinuousClock.now.advanced(by: .seconds(2))
+        while true {
+            try Task.checkCancellation()
+            do {
+                try await connection.send(payload)
+                return
+            } catch ConnectionError.sendQueueFull {
+                guard .now < deadline else { throw ConnectionError.sendQueueFull }
+                try await Task.sleep(for: .milliseconds(10))
+            }
+        }
     }
 
     func close() async {

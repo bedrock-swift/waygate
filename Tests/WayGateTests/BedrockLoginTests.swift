@@ -375,8 +375,9 @@ func nativeNetherNetConnectionCarriesLoginAndSpawn() async throws {
     let key = Array(signing.publicKey.derRepresentation)
     let signaling = TestPeerSignaling()
     let client = NetherNetConnection(networkID: 1, connectionID: 3, signaling: signaling, peer: try library.makePeer())
+    let serverPeer = RejectFirstSendPeer(try library.makePeer())
     let server = NetherNetConnection(
-        networkID: 2, connectionID: 3, signaling: signaling, peer: try library.makePeer(), authenticatedRemoteKey: key
+        networkID: 2, connectionID: 3, signaling: signaling, peer: serverPeer, authenticatedRemoteKey: key
     )
     await signaling.bind(client: client, server: server)
     let timeout = Task {
@@ -473,5 +474,30 @@ private actor TestPeerSignaling: NetherNetSignaling {
     func send(_ signal: Signal, to networkID: UInt64) async throws {
         guard let receiver = networkID == 1 ? server : client else { throw ConnectionError.closed }
         try await receiver.receive(signal)
+    }
+}
+
+private final class RejectFirstSendPeer: WebRTCPeer, @unchecked Sendable {
+    private let peer: any WebRTCPeer
+    private let lock = NSLock()
+    private var rejected = false
+
+    init(_ peer: any WebRTCPeer) { self.peer = peer }
+
+    var events: AsyncStream<PeerEvent> { peer.events }
+
+    func offer() throws { try peer.offer() }
+    func remoteDescription(_ sdp: String, kind: Signal.Kind) throws { try peer.remoteDescription(sdp, kind: kind) }
+    func remoteCandidate(_ candidate: String) throws { try peer.remoteCandidate(candidate) }
+    func close() { peer.close() }
+
+    func send(_ segments: [[UInt8]], on channel: DataChannel) throws {
+        try lock.withLock {
+            if !rejected {
+                rejected = true
+                throw ConnectionError.sendQueueFull
+            }
+            try peer.send(segments, on: channel)
+        }
     }
 }
