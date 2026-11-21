@@ -19,13 +19,23 @@ public enum BedrockBatch {
         case negotiated
     }
 
+    public enum Transport: Equatable, Sendable {
+        case raknet
+        case nethernet
+    }
+
     static let maximumBytes = 4 * 1024 * 1024
     static let compressionThreshold = 512
     private static let maximumPackets = 512
 
-    public static func encode(_ packets: [BedrockPacket], framing: Framing = .initial) throws -> [UInt8] {
+    public static func encode(
+        _ packets: [BedrockPacket], framing: Framing = .initial, transport: Transport = .raknet
+    ) throws -> [UInt8] {
         guard !packets.isEmpty, packets.count <= maximumPackets else { throw BedrockError.limitExceeded }
-        var bytes: [UInt8] = framing == .initial ? [0xfe] : [0xfe, 0xff]
+        let marker: [UInt8] = transport == .raknet ? [0xfe] : []
+        var bytes = marker
+        if framing == .negotiated { bytes.append(0xff) }
+        let prefixLength = bytes.count
         for packet in packets {
             var header: [UInt8] = []
             header.appendVarUInt(UInt32(packet.id) | (UInt32(packet.sender) << 10) | (UInt32(packet.target) << 12))
@@ -39,17 +49,19 @@ public enum BedrockBatch {
             bytes += header
             bytes += packet.payload
         }
-        if framing == .negotiated, bytes.count - 2 >= compressionThreshold {
-            let compressed = Snappy.encode(Array(bytes.dropFirst(2)))
-            if compressed.count < bytes.count - 2 { return [0xfe, 1] + compressed }
+        if framing == .negotiated, bytes.count - prefixLength >= compressionThreshold {
+            let compressed = Snappy.encode(Array(bytes.dropFirst(prefixLength)))
+            if compressed.count < bytes.count - prefixLength { return marker + [1] + compressed }
         }
         return bytes
     }
 
-    public static func decode(_ bytes: [UInt8], framing: Framing = .initial) throws -> [BedrockPacket] {
+    public static func decode(
+        _ bytes: [UInt8], framing: Framing = .initial, transport: Transport = .raknet
+    ) throws -> [BedrockPacket] {
         guard bytes.count <= maximumBytes else { throw BedrockError.limitExceeded }
         var reader = BedrockReader(bytes[...])
-        guard try reader.byte() == 0xfe else { throw BedrockError.malformed }
+        if transport == .raknet, try reader.byte() != 0xfe { throw BedrockError.malformed }
         if framing == .negotiated {
             let algorithm = try reader.byte()
             switch algorithm {

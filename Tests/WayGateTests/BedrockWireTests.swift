@@ -57,3 +57,19 @@ import Testing
     corrupt[corrupt.count - 1] ^= 1
     #expect(throws: BedrockError.invalidChecksum) { try incoming.open(corrupt) }
 }
+
+@Test func nethernetBatchesOmitTheRakNetMarker() throws {
+    let request = try BedrockPacket(id: 193, payload: [0, 0, 8, 0xb1])
+    let initial: [UInt8] = [6, 0xc1, 1, 0, 0, 8, 0xb1]
+    #expect(try BedrockBatch.encode([request], transport: .nethernet) == initial)
+    #expect(try BedrockBatch.decode(initial, transport: .nethernet) == [request])
+
+    let negotiated = try BedrockBatch.encode([request], framing: .negotiated, transport: .nethernet)
+    #expect(negotiated == [0xff] + initial)
+    #expect(try BedrockBatch.decode(negotiated, framing: .negotiated, transport: .nethernet) == [request])
+
+    let packet = try BedrockPacket(id: 9, payload: Array(repeating: 42, count: 1000))
+    let compressed = try BedrockBatch.encode([packet], framing: .negotiated, transport: .nethernet)
+    #expect(compressed.first == 1)
+    #expect(try BedrockBatch.decode(compressed, framing: .negotiated, transport: .nethernet) == [packet])
+}
