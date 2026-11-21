@@ -18,22 +18,7 @@ public enum ResourcePackFormat: Sendable {
     case legacy
     case v26_60
 }
-
-struct BedrockReader {
-    private var bytes: ArraySlice<UInt8>
-
-    init(_ bytes: ArraySlice<UInt8>) { self.bytes = bytes }
-    var isEmpty: Bool { bytes.isEmpty }
-    var remaining: Int { bytes.count }
-
-    mutating func read(_ count: Int) throws -> ArraySlice<UInt8> {
-        guard count >= 0, count <= bytes.count else { throw BedrockError.malformed }
-        let prefix = bytes.prefix(count)
-        bytes = bytes.dropFirst(count)
-        return prefix
-    }
-
-      mutating func varUInt() throws -> UInt32 {
+    mutating func varUInt() throws -> UInt32 {
         var value: UInt32 = 0
         for shift in stride(from: 0, through: 28, by: 7) {
             let byte = try byte()
@@ -43,7 +28,6 @@ struct BedrockReader {
         }
         throw BedrockError.malformed
     }
-
     mutating func varULong() throws -> UInt64 {
         var value: UInt64 = 0
         for shift in stride(from: 0, through: 63, by: 7) {
@@ -54,8 +38,12 @@ struct BedrockReader {
         }
         throw BedrockError.malformed
     }
-
-
+    mutating func varInt() throws -> Int32 {
+        let encoded = try varUInt()
+        return Int32(bitPattern: (encoded >> 1) ^ (0 &- (encoded & 1)))
+    }
+        throw BedrockError.malformed
+    }
     mutating func byte() throws -> UInt8 {
         guard let value = bytes.first else { throw BedrockError.malformed }
         bytes = bytes.dropFirst()
@@ -106,11 +94,7 @@ struct BedrockReader {
     }
 }
 extension [UInt8] {
-    mutating func appendVarInt(_ value: Int32) {
-        appendVarUInt((UInt32(bitPattern: value) << 1) ^ UInt32(bitPattern: value >> 31))
-    }
-
-    mutating func appendVarUInt(_ value: UInt32) {
+        mutating func appendVarUInt(_ value: UInt32) {
         var remaining = value
         while remaining >= 128 {
             append(UInt8(remaining & 127) | 128)
@@ -127,20 +111,15 @@ extension [UInt8] {
         }
         append(UInt8(remaining))
     }
-
-
     mutating func appendBigEndian(_ value: Int32) {
         Swift.withUnsafeBytes(of: value.bigEndian) { append(contentsOf: $0) }
     }
-
     mutating func appendLittleEndian<T: FixedWidthInteger>(_ value: T) {
         Swift.withUnsafeBytes(of: value.littleEndian) { append(contentsOf: $0) }
     }
-
     mutating func appendString(_ value: String) throws {
         try appendVarBytes(value.utf8)
     }
-
     mutating func appendVarBytes(_ bytes: some Collection<UInt8>) throws {
         guard bytes.count <= BedrockBatch.maximumBytes else { throw BedrockError.limitExceeded }
         appendVarUInt(UInt32(bytes.count))
