@@ -10,10 +10,16 @@ public protocol BedrockTransport: Sendable {
 extension RakNetConnection: BedrockTransport {}
 
 public actor BedrockSession {
+    private struct WorldIdentity {
+        let dimension: Int32
+        let runtimeID: UInt64
+    }
+
     private enum WorldState {
         case idle
-        case started(dimension: Int32)
-        case readyToSpawn(dimension: Int32, radius: Int32)
+        case started(WorldIdentity)
+        case readyToSpawn(WorldIdentity, radius: Int32)
+        case awaitingInitialization(UInt64)
         case spawned
     }
 
@@ -105,12 +111,12 @@ public actor BedrockSession {
     ) async throws -> (radius: Int32, pendingPackets: [BedrockPacket]) {
         guard !closed else { throw BedrockError.closed }
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
-        guard case .started(let dimension) = worldState else { throw BedrockError.invalidSessionState }
+        guard case .started(let world) = worldState else { throw BedrockError.invalidSessionState }
         guard maximum > 0 else { throw BedrockError.malformed }
         let result = try await runExchange(timeout: timeout) {
             try await self.exchangeChunkRadius(maximum: maximum, pendingPackets: pendingPackets)
         }
-        worldState = .readyToSpawn(dimension: dimension, radius: result.radius)
+        worldState = .readyToSpawn(world, radius: result.radius)
         return result
     }
 
@@ -143,16 +149,26 @@ public actor BedrockSession {
     private func exchangeChunkRadius(
         maximum: Int32, pendingPackets: [BedrockPacket]
     ) async throws -> (radius: Int32, pendingPackets: [BedrockPacket]) {
+        let (radius, deferred) = try await receiveMatching(RequestChunkRadius.packetID, pendingPackets: pendingPackets) {
+            let request = try RequestChunkRadius(decoding: $0)
+            guard request.radius > 0 else { throw BedrockError.malformed }
+            return min(request.radius, maximum)
+        }
+        try await sendBatch([ChunkRadiusUpdated(radius: radius).packet()])
+        return (radius, deferred)
+    }
+
+    private func receiveMatching<Value>(
+        _ id: UInt16, pendingPackets: [BedrockPacket], decode: (BedrockPacket) throws -> Value
+    ) async throws -> (Value, [BedrockPacket]) {
         var batch = pendingPackets
         var deferred: [BedrockPacket] = []
         var remainingBytes = BedrockBatch.maximumBytes
         while true {
-            var radius: Int32?
+            var match: Value?
             for packet in batch {
-                if radius == nil, packet.id == RequestChunkRadius.packetID, packet.sender == 0, packet.target == 0 {
-                    let request = try RequestChunkRadius(decoding: packet)
-                    guard request.radius > 0 else { throw BedrockError.malformed }
-                    radius = min(request.radius, maximum)
+                if match == nil, packet.id == id, packet.sender == 0, packet.target == 0 {
+                    match = try decode(packet)
                     continue
                 }
                 guard deferred.count < BedrockBatch.maximumPackets, packet.payload.count <= remainingBytes else {
@@ -161,10 +177,7 @@ public actor BedrockSession {
                 remainingBytes -= packet.payload.count
                 deferred.append(packet)
             }
-            if let radius {
-                try await sendBatch([ChunkRadiusUpdated(radius: radius).packet()])
-                return (radius, deferred)
-            }
+            if let match { return (match, deferred) }
             guard let next = try await receiveBatch() else { throw BedrockError.closed }
             batch = next
         }
@@ -190,14 +203,14 @@ public actor BedrockSession {
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
         guard packsNegotiated, case .idle = worldState else { throw BedrockError.invalidSessionState }
         try await sendBatch([game.packet(), items.packet()])
-        worldState = .started(dimension: game.world.dimension)
+        worldState = .started(WorldIdentity(dimension: game.world.dimension, runtimeID: game.player.runtimeID))
     }
 
     public func spawn(at position: SIMD3<Int32>, with chunks: [LevelChunk]) async throws {
         guard !closed else { throw BedrockError.closed }
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
-        guard case let .readyToSpawn(dimension, radius) = worldState else { throw BedrockError.invalidSessionState }
-        guard chunks.allSatisfy({ $0.dimension == dimension }) else { throw BedrockError.malformed }
+        guard case let .readyToSpawn(world, radius) = worldState else { throw BedrockError.invalidSessionState }
+        guard chunks.allSatisfy({ $0.dimension == world.dimension }) else { throw BedrockError.malformed }
         guard let blockRadius = UInt32(exactly: Int64(radius) * 16) else { throw BedrockError.limitExceeded }
         try Task.checkCancellation()
 
@@ -212,11 +225,27 @@ public actor BedrockSession {
             }
             try Task.checkCancellation()
             try await sendBatch([PlayStatus.playerSpawn.packet()])
-            worldState = .spawned
+            worldState = .awaitingInitialization(world.runtimeID)
         } catch {
             await close()
             throw error
         }
+    }
+
+    public func waitForSpawn(
+        pendingPackets: [BedrockPacket] = [], timeout: Duration = .seconds(15)
+    ) async throws -> [BedrockPacket] {
+        guard !closed else { throw BedrockError.closed }
+        guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
+        guard case .awaitingInitialization(let runtimeID) = worldState else { throw BedrockError.invalidSessionState }
+        let (_, deferred) = try await runExchange(timeout: timeout) {
+            try await self.receiveMatching(SetLocalPlayerAsInitialized.packetID, pendingPackets: pendingPackets) {
+                let acknowledgement = try SetLocalPlayerAsInitialized(decoding: $0)
+                guard acknowledgement.entityRuntimeID == runtimeID else { throw BedrockError.malformed }
+            }
+        }
+        worldState = .spawned
+        return deferred
     }
 
     public func close() async {

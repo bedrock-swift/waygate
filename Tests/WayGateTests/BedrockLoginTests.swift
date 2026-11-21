@@ -243,10 +243,16 @@ private func makeLoginPacket(protocolVersion: Int32, envelope: Data, clientToken
     return try BedrockPacket(id: 1, payload: payload)
 }
 
-@Test(arguments: [true, false])
-func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async throws {
+enum JoinCase: Sendable {
+    case matching
+    case wrongKey
+    case wrongRuntimeID
+}
+
+@Test(arguments: [JoinCase.matching, .wrongKey, .wrongRuntimeID])
+func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async throws {
     let signing = P384.Signing.PrivateKey()
-    let authenticatedKey = matching ? signing.publicKey : P384.Signing.PrivateKey().publicKey
+    let authenticatedKey = scenario == .wrongKey ? P384.Signing.PrivateKey().publicKey : signing.publicKey
     let clientData = Data(#"{"DeviceOS":7}"#.utf8)
     let clientToken = try BedrockJWT.sign(clientData, with: signing)
     let login = BedrockLoginServer(protocolVersion: 2225) { _ in Array(signing.publicKey.derRepresentation) }
@@ -257,16 +263,18 @@ func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async 
     let packComplete = try ResourcePackClientResponse(status: .completed).packet(format: .v26_60)
     let radiusRequest = try RequestChunkRadius(radius: 18, maximumRadius: 24).packet()
     let nextPacket = try BedrockPacket(id: 9, payload: [1])
+    let ack = try SetLocalPlayerAsInitialized(entityRuntimeID: scenario == .wrongRuntimeID ? 2 : 1).packet()
     let transport = LoginTransport([
         try BedrockBatch.encode([settings], transport: .nethernet),
         try BedrockBatch.encode([request], framing: .negotiated, transport: .nethernet),
         try BedrockBatch.encode([packResponse], framing: .negotiated, transport: .nethernet),
         try BedrockBatch.encode([packComplete], framing: .negotiated, transport: .nethernet),
-        try BedrockBatch.encode([radiusRequest, nextPacket], framing: .negotiated, transport: .nethernet)
+        try BedrockBatch.encode([radiusRequest, nextPacket], framing: .negotiated, transport: .nethernet),
+        try BedrockBatch.encode([ack, nextPacket], framing: .negotiated, transport: .nethernet)
     ])
     let key = Array(authenticatedKey.derRepresentation)
 
-    if matching {
+    if scenario != .wrongKey {
         let session = try await login.acceptNetherNet(on: transport, authenticatedKey: key)
         #expect(session.clientData == clientData)
         let replies = await transport.replies
@@ -303,6 +311,7 @@ func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async 
         await #expect(throws: BedrockError.malformed) {
             try await session.spawn(at: game.world.spawn, with: [wrongDimension])
         }
+        await #expect(throws: BedrockError.invalidSessionState) { try await session.waitForSpawn() }
         let beforeSpawn = await transport.replies.count
         try await session.spawn(at: game.world.spawn, with: [chunk])
         let spawn = try await transport.replies.dropFirst(beforeSpawn).map {
@@ -312,6 +321,15 @@ func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async 
         #expect(spawn == (try [[publisher.packet()], [chunk.packet()], [PlayStatus.playerSpawn.packet()]]))
         await #expect(throws: BedrockError.invalidSessionState) {
             try await session.spawn(at: game.world.spawn, with: [chunk])
+        }
+        if scenario == .wrongRuntimeID {
+            await #expect(throws: BedrockError.malformed) {
+                try await session.waitForSpawn(pendingPackets: radius.pendingPackets)
+            }
+            #expect(await transport.closed)
+        } else {
+            let resumed = try await session.waitForSpawn(pendingPackets: radius.pendingPackets)
+            #expect(resumed == [deferred, nextPacket, nextPacket])
         }
         await session.close()
     } else {
