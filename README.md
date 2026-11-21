@@ -2,38 +2,40 @@
 
 # WayGate
 
-A Swift library for the Minecraft: Bedrock Edition protocol.
+A Swift library for Minecraft: Bedrock Edition networking.
 
-[![Swift 6.1+](https://img.shields.io/badge/Swift-6.1+-orange?style=flat-square&logo=swift)](https://www.swift.org)
+[![Swift 6.1+](https://img.shields.io/badge/Swift-6.1%2B-orange?style=flat-square&logo=swift)](https://www.swift.org)
 
 <img src="assets/waygate.png" width="640" alt="An orange swift carrying an envelope toward a gate">
 
 </div>
 
-## Features
+## Overview
 
-- Bedrock packet headers and batched transport framing
-- Legacy Bedrock login with Mojang certificate-chain verification
-- Snappy compression
-- P-384 key exchange and encrypted packet sessions over RakNet
-- Resource pack metadata, transfer packets, and archive hashing
-- Raw RakNet relay for a fixed upstream
+WayGate provides packet codecs and game sessions over [NetherNet](https://github.com/bedrock-swift/nethernet) and [RakNet](https://github.com/bedrock-swift/raknet). Use it to build Bedrock servers, proxies, and other networking tools.
 
-Use `BedrockLoginServer(trust: try .mojang())` with `BedrockListener` to authenticate legacy Bedrock login chains. WayGate checks the client data signature, negotiates encryption and publishes a session with the verified identity.
+## Getting started
 
-Resource pack codecs default to the Bedrock 26.60 layout. Pass `.legacy` when using them with a legacy session.
+Add WayGate to your Swift package and use the `WayGate` product. Swift 6.1 or later is required.
 
-Use `BedrockLoginServer.multiplayer(keys: try await MinecraftLoginKeys())` for Bedrock 26.60. The key cache verifies multiplayer tokens against Mojang's signing keys and refreshes those keys as they rotate.
+```swift
+.package(url: "https://github.com/bedrock-swift/waygate.git", branch: "main")
+```
 
-After login, pass a `ResourcePackNegotiation` to `BedrockSession.negotiateResourcePacks`. The method returns any packets that followed the client's final confirmation in the same batch.
+Use `BedrockLoginServer.multiplayer(keys:)` with `MinecraftLoginKeys` for the Bedrock 26.60 protocol. Pass an authenticated NetherNet connection to `login.accept(on:)` to open a game session. The [NetherNet README](https://github.com/bedrock-swift/nethernet#http-signaling) covers the HTTP signaling setup.
+
+### RakNet relay
+
+The demo listens on loopback and relays RakNet packets to a fixed upstream.
+
+```sh
+swift run waygate 19142 127.0.0.1 19132
+```
 
 ## Development
 
-Build with Swift 6.1 or later. The demo binds to IPv4 loopback.
-
 ```sh
 swift test
-swift run waygate listen 19142
-swift run waygate listen-legacy 19142
-swift run waygate 19142 127.0.0.1 19132
 ```
+
+See [Contributing](.github/CONTRIBUTING.md).
