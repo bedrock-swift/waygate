@@ -18,6 +18,7 @@ public actor BedrockSession {
     private var sending = false
     private var negotiatingPacks = false
     private var packsNegotiated = false
+    private var worldStarted = false
     private var closed = false
 
     public nonisolated let login: LoginRequest
@@ -125,6 +126,14 @@ public actor BedrockSession {
             }
         }
         throw BedrockError.closed
+    }
+
+    public func startGame(_ game: StartGame, items: ItemRegistry) async throws {
+        guard !closed else { throw BedrockError.closed }
+        guard !receiving, !sending, !negotiatingPacks else { throw BedrockError.concurrentOperation }
+        guard packsNegotiated, !worldStarted else { throw BedrockError.invalidSessionState }
+        try await sendBatch([game.packet(), items.packet()])
+        worldStarted = true
     }
 
     public func close() async {

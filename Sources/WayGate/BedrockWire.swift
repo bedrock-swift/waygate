@@ -12,6 +12,7 @@ public enum BedrockError: Error, Equatable {
     case untrustedIdentity
     case expiredIdentity
     case concurrentOperation
+    case invalidSessionState
 }
 
 public enum ResourcePackFormat: Sendable {

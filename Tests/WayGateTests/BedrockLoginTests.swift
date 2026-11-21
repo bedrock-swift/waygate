@@ -253,9 +253,13 @@ func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async 
     let envelope = Data(#"{"AuthenticationType":0,"Token":"header.payload.signature"}"#.utf8)
     let request = try makeLoginPacket(protocolVersion: 2225, envelope: envelope, clientToken: clientToken)
     let settings = try BedrockPacket(id: 193, payload: [0, 0, 8, 0xb1])
+    let packResponse = try ResourcePackClientResponse(status: .allPacksDownloaded).packet(format: .v26_60)
+    let packComplete = try ResourcePackClientResponse(status: .completed).packet(format: .v26_60)
     let transport = LoginTransport([
         try BedrockBatch.encode([settings], transport: .nethernet),
-        try BedrockBatch.encode([request], framing: .negotiated, transport: .nethernet)
+        try BedrockBatch.encode([request], framing: .negotiated, transport: .nethernet),
+        try BedrockBatch.encode([packResponse], framing: .negotiated, transport: .nethernet),
+        try BedrockBatch.encode([packComplete], framing: .negotiated, transport: .nethernet)
     ])
     let key = Array(authenticatedKey.derRepresentation)
 
@@ -266,6 +270,19 @@ func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async 
         try #require(replies.count == 2)
         #expect(replies[0] == [12, 0x8f, 1, 0, 2, 1, 0, 0, 0, 0, 0, 0, 0])
         #expect(replies[1] == [0xff, 5, 2, 0, 0, 0, 0])
+
+        let game = StartGame(player: .init(uniqueID: 1, runtimeID: 1), world: .init(name: "Test World"))
+        let items = ItemRegistry(items: [])
+        await #expect(throws: BedrockError.invalidSessionState) { try await session.startGame(game, items: items) }
+        let packs = try ResourcePackNegotiation(
+            info: ResourcePacksInfo(), stack: ResourcePackStack(baseGameVersion: game.gameVersion), format: .v26_60
+        )
+        #expect(try await session.negotiateResourcePacks(packs).isEmpty)
+        try await session.startGame(game, items: items)
+        let start = try #require(await transport.replies.last)
+        let packets = try BedrockBatch.decode(start, framing: .negotiated, transport: .nethernet)
+        #expect(packets == (try [game.packet(), items.packet()]))
+        await #expect(throws: BedrockError.invalidSessionState) { try await session.startGame(game, items: items) }
         await session.close()
     } else {
         await #expect(throws: BedrockError.untrustedIdentity) {
