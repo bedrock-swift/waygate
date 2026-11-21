@@ -26,7 +26,7 @@ public enum BedrockBatch {
 
     static let maximumBytes = 4 * 1024 * 1024
     static let compressionThreshold = 512
-    private static let maximumPackets = 512
+    static let maximumPackets = 512
 
     public static func encode(
         _ packets: [BedrockPacket], framing: Framing = .initial, transport: Transport = .raknet

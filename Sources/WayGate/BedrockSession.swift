@@ -16,9 +16,10 @@ public actor BedrockSession {
     private var outgoing: BedrockCipher?
     private var receiving = false
     private var sending = false
-    private var negotiatingPacks = false
+    private var exchanging = false
     private var packsNegotiated = false
     private var worldStarted = false
+    private var chunkRadiusNegotiated = false
     private var closed = false
 
     public nonisolated let login: LoginRequest
@@ -42,7 +43,7 @@ public actor BedrockSession {
     }
 
     public func receive() async throws -> [BedrockPacket]? {
-        guard !negotiatingPacks else { throw BedrockError.concurrentOperation }
+        guard !exchanging else { throw BedrockError.concurrentOperation }
         return try await receiveBatch()
     }
 
@@ -64,7 +65,7 @@ public actor BedrockSession {
     }
 
     public func send(_ packets: [BedrockPacket]) async throws {
-        guard !negotiatingPacks else { throw BedrockError.concurrentOperation }
+        guard !exchanging else { throw BedrockError.concurrentOperation }
         try await sendBatch(packets)
     }
 
@@ -86,31 +87,81 @@ public actor BedrockSession {
         _ negotiation: ResourcePackNegotiation, timeout: Duration = .seconds(120)
     ) async throws -> [BedrockPacket] {
         guard !closed else { throw BedrockError.closed }
-        guard !receiving, !sending, !negotiatingPacks else { throw BedrockError.concurrentOperation }
+        guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
         guard !packsNegotiated else { throw ResourcePackNegotiationError.unexpectedResponse }
+        let trailing = try await runExchange(timeout: timeout) { try await self.exchangeResourcePacks(negotiation) }
+        packsNegotiated = true
+        return trailing
+    }
+
+    public func negotiateChunkRadius(
+        maximum: Int32, pendingPackets: [BedrockPacket] = [], timeout: Duration = .seconds(15)
+    ) async throws -> (radius: Int32, pendingPackets: [BedrockPacket]) {
+        guard !closed else { throw BedrockError.closed }
+        guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
+        guard worldStarted, !chunkRadiusNegotiated else { throw BedrockError.invalidSessionState }
+        guard maximum > 0 else { throw BedrockError.malformed }
+        let result = try await runExchange(timeout: timeout) {
+            try await self.exchangeChunkRadius(maximum: maximum, pendingPackets: pendingPackets)
+        }
+        chunkRadiusNegotiated = true
+        return result
+    }
+
+    private func runExchange<Result: Sendable>(
+        timeout: Duration, operation: @escaping @Sendable () async throws -> Result
+    ) async throws -> Result {
         guard timeout > .zero else { throw BedrockError.timedOut }
         try Task.checkCancellation()
 
-        negotiatingPacks = true
-        defer { negotiatingPacks = false }
-        let trailing = try await withThrowingTaskGroup(of: [BedrockPacket].self) { group in
-            group.addTask { try await self.exchangeResourcePacks(negotiation) }
+        exchanging = true
+        defer { exchanging = false }
+        return try await withThrowingTaskGroup(of: Result.self) { group in
+            group.addTask(operation: operation)
             group.addTask {
                 try await Task.sleep(for: timeout)
                 throw BedrockError.timedOut
             }
             defer { group.cancelAll() }
             do {
-                guard let packets = try await group.next() else { throw BedrockError.closed }
-                return packets
+                guard let result = try await group.next() else { throw BedrockError.closed }
+                return result
             } catch {
                 group.cancelAll()
                 await close()
                 throw error
             }
         }
-        packsNegotiated = true
-        return trailing
+    }
+
+    private func exchangeChunkRadius(
+        maximum: Int32, pendingPackets: [BedrockPacket]
+    ) async throws -> (radius: Int32, pendingPackets: [BedrockPacket]) {
+        var batch = pendingPackets
+        var deferred: [BedrockPacket] = []
+        var remainingBytes = BedrockBatch.maximumBytes
+        while true {
+            var radius: Int32?
+            for packet in batch {
+                if radius == nil, packet.id == RequestChunkRadius.packetID, packet.sender == 0, packet.target == 0 {
+                    let request = try RequestChunkRadius(decoding: packet)
+                    guard request.radius > 0 else { throw BedrockError.malformed }
+                    radius = min(request.radius, maximum)
+                    continue
+                }
+                guard deferred.count < BedrockBatch.maximumPackets, packet.payload.count <= remainingBytes else {
+                    throw BedrockError.limitExceeded
+                }
+                remainingBytes -= packet.payload.count
+                deferred.append(packet)
+            }
+            if let radius {
+                try await sendBatch([ChunkRadiusUpdated(radius: radius).packet()])
+                return (radius, deferred)
+            }
+            guard let next = try await receiveBatch() else { throw BedrockError.closed }
+            batch = next
+        }
     }
 
     private func exchangeResourcePacks(_ negotiation: ResourcePackNegotiation) async throws -> [BedrockPacket] {
@@ -130,7 +181,7 @@ public actor BedrockSession {
 
     public func startGame(_ game: StartGame, items: ItemRegistry) async throws {
         guard !closed else { throw BedrockError.closed }
-        guard !receiving, !sending, !negotiatingPacks else { throw BedrockError.concurrentOperation }
+        guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
         guard packsNegotiated, !worldStarted else { throw BedrockError.invalidSessionState }
         try await sendBatch([game.packet(), items.packet()])
         worldStarted = true

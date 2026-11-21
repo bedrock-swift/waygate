@@ -255,11 +255,14 @@ func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async 
     let settings = try BedrockPacket(id: 193, payload: [0, 0, 8, 0xb1])
     let packResponse = try ResourcePackClientResponse(status: .allPacksDownloaded).packet(format: .v26_60)
     let packComplete = try ResourcePackClientResponse(status: .completed).packet(format: .v26_60)
+    let radiusRequest = try RequestChunkRadius(radius: 18, maximumRadius: 24).packet()
+    let nextPacket = try BedrockPacket(id: 9, payload: [1])
     let transport = LoginTransport([
         try BedrockBatch.encode([settings], transport: .nethernet),
         try BedrockBatch.encode([request], framing: .negotiated, transport: .nethernet),
         try BedrockBatch.encode([packResponse], framing: .negotiated, transport: .nethernet),
-        try BedrockBatch.encode([packComplete], framing: .negotiated, transport: .nethernet)
+        try BedrockBatch.encode([packComplete], framing: .negotiated, transport: .nethernet),
+        try BedrockBatch.encode([radiusRequest, nextPacket], framing: .negotiated, transport: .nethernet)
     ])
     let key = Array(authenticatedKey.derRepresentation)
 
@@ -283,6 +286,14 @@ func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async 
         let packets = try BedrockBatch.decode(start, framing: .negotiated, transport: .nethernet)
         #expect(packets == (try [game.packet(), items.packet()]))
         await #expect(throws: BedrockError.invalidSessionState) { try await session.startGame(game, items: items) }
+
+        let deferred = try BedrockPacket(id: 9, payload: [0])
+        let radius = try await session.negotiateChunkRadius(maximum: 8, pendingPackets: [deferred])
+        #expect(radius.radius == 8)
+        #expect(radius.pendingPackets == [deferred, nextPacket])
+        let radiusReply = try #require(await transport.replies.last)
+        let expected = try ChunkRadiusUpdated(radius: 8).packet()
+        #expect(try BedrockBatch.decode(radiusReply, framing: .negotiated, transport: .nethernet) == [expected])
         await session.close()
     } else {
         await #expect(throws: BedrockError.untrustedIdentity) {
