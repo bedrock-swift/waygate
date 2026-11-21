@@ -10,6 +10,13 @@ public protocol BedrockTransport: Sendable {
 extension RakNetConnection: BedrockTransport {}
 
 public actor BedrockSession {
+    private enum WorldState {
+        case idle
+        case started(dimension: Int32)
+        case readyToSpawn(dimension: Int32, radius: Int32)
+        case spawned
+    }
+
     private let transport: any BedrockTransport
     private let batchTransport: BedrockBatch.Transport
     private var incoming: BedrockCipher?
@@ -18,8 +25,7 @@ public actor BedrockSession {
     private var sending = false
     private var exchanging = false
     private var packsNegotiated = false
-    private var worldStarted = false
-    private var chunkRadiusNegotiated = false
+    private var worldState = WorldState.idle
     private var closed = false
 
     public nonisolated let login: LoginRequest
@@ -99,12 +105,12 @@ public actor BedrockSession {
     ) async throws -> (radius: Int32, pendingPackets: [BedrockPacket]) {
         guard !closed else { throw BedrockError.closed }
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
-        guard worldStarted, !chunkRadiusNegotiated else { throw BedrockError.invalidSessionState }
+        guard case .started(let dimension) = worldState else { throw BedrockError.invalidSessionState }
         guard maximum > 0 else { throw BedrockError.malformed }
         let result = try await runExchange(timeout: timeout) {
             try await self.exchangeChunkRadius(maximum: maximum, pendingPackets: pendingPackets)
         }
-        chunkRadiusNegotiated = true
+        worldState = .readyToSpawn(dimension: dimension, radius: result.radius)
         return result
     }
 
@@ -182,9 +188,35 @@ public actor BedrockSession {
     public func startGame(_ game: StartGame, items: ItemRegistry) async throws {
         guard !closed else { throw BedrockError.closed }
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
-        guard packsNegotiated, !worldStarted else { throw BedrockError.invalidSessionState }
+        guard packsNegotiated, case .idle = worldState else { throw BedrockError.invalidSessionState }
         try await sendBatch([game.packet(), items.packet()])
-        worldStarted = true
+        worldState = .started(dimension: game.world.dimension)
+    }
+
+    public func spawn(at position: SIMD3<Int32>, with chunks: [LevelChunk]) async throws {
+        guard !closed else { throw BedrockError.closed }
+        guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
+        guard case let .readyToSpawn(dimension, radius) = worldState else { throw BedrockError.invalidSessionState }
+        guard chunks.allSatisfy({ $0.dimension == dimension }) else { throw BedrockError.malformed }
+        guard let blockRadius = UInt32(exactly: Int64(radius) * 16) else { throw BedrockError.limitExceeded }
+        try Task.checkCancellation()
+
+        exchanging = true
+        defer { exchanging = false }
+        do {
+            let publisher = NetworkChunkPublisherUpdate(position: position, radiusInBlocks: blockRadius)
+            try await sendBatch([publisher.packet()])
+            for chunk in chunks {
+                try Task.checkCancellation()
+                try await sendBatch([chunk.packet()])
+            }
+            try Task.checkCancellation()
+            try await sendBatch([PlayStatus.playerSpawn.packet()])
+            worldState = .spawned
+        } catch {
+            await close()
+            throw error
+        }
     }
 
     public func close() async {

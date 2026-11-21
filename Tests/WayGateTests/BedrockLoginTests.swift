@@ -287,6 +287,10 @@ func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async 
         #expect(packets == (try [game.packet(), items.packet()]))
         await #expect(throws: BedrockError.invalidSessionState) { try await session.startGame(game, items: items) }
 
+        let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, payload: [1, 2, 0])
+        await #expect(throws: BedrockError.invalidSessionState) {
+            try await session.spawn(at: game.world.spawn, with: [chunk])
+        }
         let deferred = try BedrockPacket(id: 9, payload: [0])
         let radius = try await session.negotiateChunkRadius(maximum: 8, pendingPackets: [deferred])
         #expect(radius.radius == 8)
@@ -294,6 +298,21 @@ func nethernetLoginRequiresTheAuthenticatedTransportKey(_ matching: Bool) async 
         let radiusReply = try #require(await transport.replies.last)
         let expected = try ChunkRadiusUpdated(radius: 8).packet()
         #expect(try BedrockBatch.decode(radiusReply, framing: .negotiated, transport: .nethernet) == [expected])
+
+        let wrongDimension = LevelChunk(x: 0, z: 0, dimension: 1, subChunkCount: 0, payload: chunk.payload)
+        await #expect(throws: BedrockError.malformed) {
+            try await session.spawn(at: game.world.spawn, with: [wrongDimension])
+        }
+        let beforeSpawn = await transport.replies.count
+        try await session.spawn(at: game.world.spawn, with: [chunk])
+        let spawn = try await transport.replies.dropFirst(beforeSpawn).map {
+            try BedrockBatch.decode($0, framing: .negotiated, transport: .nethernet)
+        }
+        let publisher = NetworkChunkPublisherUpdate(position: game.world.spawn, radiusInBlocks: 128)
+        #expect(spawn == (try [[publisher.packet()], [chunk.packet()], [PlayStatus.playerSpawn.packet()]]))
+        await #expect(throws: BedrockError.invalidSessionState) {
+            try await session.spawn(at: game.world.spawn, with: [chunk])
+        }
         await session.close()
     } else {
         await #expect(throws: BedrockError.untrustedIdentity) {
