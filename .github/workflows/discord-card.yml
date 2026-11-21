@@ -1,0 +1,56 @@
+name: Discord card
+
+on:
+  schedule:
+    - cron: '13,43 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency: discord-card
+
+jobs:
+  update:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render the online count
+        run: |
+          python3 - <<'PY'
+          import base64
+          import json
+          import os
+          from pathlib import Path
+          from urllib.request import Request, urlopen
+
+          url = "https://discord.com/api/v10/invites/fXDxkQzWhD?with_counts=true"
+          request = Request(url, headers={"User-Agent": "BedrockSwiftDiscordCard/1.0"})
+          with urlopen(request, timeout=15) as response:
+              invite = json.load(response)
+          count = invite.get("approximate_presence_count")
+          if invite.get("guild", {}).get("id") != "1573694440877330565" or type(count) is not int or count < 0:
+              raise SystemExit("Discord did not return the Bedrock Swift online count")
+
+          background = base64.b64encode(Path("assets/discord.png").read_bytes()).decode("ascii")
+          card = f"""<svg xmlns="http://www.w3.org/2000/svg" width="320" height="76" viewBox="0 0 320 76" role="img">
+            <title>Bedrock Swift on Discord</title>
+            <image href="data:image/png;base64,{background}" width="320" height="76"/>
+            <text x="63" y="55" fill="#FFE7D9" font-family="Segoe UI, sans-serif" font-size="11">{count} ONLINE</text>
+          </svg>
+          """
+          Path(os.environ["RUNNER_TEMP"], "discord.svg").write_text(card, encoding="utf-8")
+          PY
+      - name: Publish the card
+        run: |
+          git fetch --depth=1 origin refs/heads/discord-card:refs/remotes/origin/discord-card
+          output="$RUNNER_TEMP/discord-card"
+          git worktree add --detach "$output" origin/discord-card
+          cp "$RUNNER_TEMP/discord.svg" "$output/discord.svg"
+          git -C "$output" add -- discord.svg
+          if git -C "$output" diff --cached --quiet -- discord.svg; then
+            exit 0
+          fi
+          git -C "$output" -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'refresh the discord card'
+          git -C "$output" push origin HEAD:refs/heads/discord-card
