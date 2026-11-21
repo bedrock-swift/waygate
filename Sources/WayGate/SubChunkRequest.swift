@@ -18,14 +18,8 @@ public struct SubChunkRequest: Equatable, Sendable {
         dimension = try reader.varInt()
         let count = try reader.varUInt()
         guard count <= Self.maximumOffsets else { throw BedrockError.limitExceeded }
-        offsets = try reader.list(count: count, minimumElementSize: 3) { reader in
-            try SIMD3(Int8(bitPattern: reader.byte()), Int8(bitPattern: reader.byte()), Int8(bitPattern: reader.byte()))
-        }
-        center = try SIMD3(
-            Int32(bitPattern: reader.littleEndian(UInt32.self)),
-            Int32(bitPattern: reader.littleEndian(UInt32.self)),
-            Int32(bitPattern: reader.littleEndian(UInt32.self))
-        )
+        offsets = try reader.list(count: count, minimumElementSize: 3) { try $0.subChunkOffset() }
+        center = try reader.subChunkPosition()
         guard reader.isEmpty else { throw BedrockError.malformed }
     }
 
@@ -34,14 +28,36 @@ public struct SubChunkRequest: Equatable, Sendable {
         var payload: [UInt8] = []
         payload.appendVarInt(dimension)
         payload.appendVarUInt(UInt32(offsets.count))
-        for offset in offsets {
-            payload.append(contentsOf: [
-                UInt8(bitPattern: offset.x), UInt8(bitPattern: offset.y), UInt8(bitPattern: offset.z)
-            ])
-        }
-        payload.appendLittleEndian(center.x)
-        payload.appendLittleEndian(center.y)
-        payload.appendLittleEndian(center.z)
+        for offset in offsets { payload.appendSubChunkOffset(offset) }
+        payload.appendSubChunkPosition(center)
         return try BedrockPacket(id: Self.packetID, sender: sender, target: target, payload: payload)
+    }
+}
+
+extension BedrockReader {
+    mutating func subChunkOffset() throws -> SIMD3<Int8> {
+        try SIMD3(Int8(bitPattern: byte()), Int8(bitPattern: byte()), Int8(bitPattern: byte()))
+    }
+
+    mutating func subChunkPosition() throws -> SIMD3<Int32> {
+        try SIMD3(
+            Int32(bitPattern: littleEndian(UInt32.self)),
+            Int32(bitPattern: littleEndian(UInt32.self)),
+            Int32(bitPattern: littleEndian(UInt32.self))
+        )
+    }
+}
+
+extension [UInt8] {
+    mutating func appendSubChunkOffset(_ offset: SIMD3<Int8>) {
+        append(UInt8(bitPattern: offset.x))
+        append(UInt8(bitPattern: offset.y))
+        append(UInt8(bitPattern: offset.z))
+    }
+
+    mutating func appendSubChunkPosition(_ position: SIMD3<Int32>) {
+        appendLittleEndian(position.x)
+        appendLittleEndian(position.y)
+        appendLittleEndian(position.z)
     }
 }
