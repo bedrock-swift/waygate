@@ -132,9 +132,9 @@ public struct StartGame: Equatable, Sendable {
         guard packet.id == Self.packetID else { throw BedrockError.unexpectedPacket(packet.id) }
         guard packet.payload.count <= BedrockBatch.maximumBytes else { throw BedrockError.limitExceeded }
         var reader = BedrockReader(packet.payload[...])
-        let unique = try reader.actorID()
+        let unique = try reader.varULong()
         let uniqueID = Int64(bitPattern: (unique >> 1) ^ (0 &- (unique & 1)))
-        let runtime = try reader.actorID()
+        let runtime = try reader.varULong()
         let mode = try reader.varInt()
         let position = try SIMD3(reader.float32(), reader.float32(), reader.float32())
         let player = try Player(
@@ -237,8 +237,8 @@ public struct StartGame: Equatable, Sendable {
               let blocks = UInt32(exactly: blocks.count) else { throw BedrockError.limitExceeded }
         var payload: [UInt8] = []
         let uniqueID = (UInt64(bitPattern: player.uniqueID) << 1) ^ UInt64(bitPattern: player.uniqueID >> 63)
-        payload.appendActorID(uniqueID)
-        payload.appendActorID(player.runtimeID)
+        payload.appendVarULong(uniqueID)
+        payload.appendVarULong(player.runtimeID)
         payload.appendVarInt(player.gameMode)
         payload.appendLittleEndian(player.position.x.bitPattern)
         payload.appendLittleEndian(player.position.y.bitPattern)
@@ -337,20 +337,6 @@ public struct StartGame: Equatable, Sendable {
     }
 }
 
-private extension BedrockReader {
-    mutating func actorID() throws -> UInt64 {
-        var value: UInt64 = 0
-        for shift in stride(from: 0, through: 63, by: 7) {
-            let byte = try byte()
-            guard shift < 63 || byte <= 1 else { throw BedrockError.malformed }
-            value |= UInt64(byte & 0x7f) << shift
-            if byte < 128 { return value }
-        }
-        throw BedrockError.malformed
-    }
-
-}
-
 extension BedrockReader {
     mutating func float32() throws -> Float {
         Float(bitPattern: try littleEndian(UInt32.self))
@@ -358,15 +344,6 @@ extension BedrockReader {
 }
 
 private extension [UInt8] {
-    mutating func appendActorID(_ value: UInt64) {
-        var remaining = value
-        while remaining >= 128 {
-            append(UInt8(remaining & 127) | 128)
-            remaining >>= 7
-        }
-        append(UInt8(remaining))
-    }
-
     mutating func appendCompound(_ compound: NetworkNBT) throws {
         guard compound.bytes.count <= BedrockBatch.maximumBytes - count else { throw BedrockError.limitExceeded }
         append(contentsOf: compound.bytes)
