@@ -5,6 +5,7 @@
 A Swift library for Minecraft: Bedrock Edition networking.
 
 [![Swift 6.1+](https://img.shields.io/badge/Swift-6.1%2B-orange?style=flat-square&logo=swift)](https://www.swift.org)
+[![MIT license](https://img.shields.io/github/license/bedrock-swift/waygate?style=flat-square)](LICENSE)
 
 <img src="assets/waygate.png" width="640" alt="An orange swift carrying an envelope toward a gate">
 
