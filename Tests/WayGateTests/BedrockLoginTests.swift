@@ -1,5 +1,6 @@
 import Crypto
 import Foundation
+import NetherNet
 import RakNet
 import Testing
 @testable import WayGate
@@ -365,4 +366,112 @@ private actor LoginTransport: BedrockTransport {
     func receive() async throws -> [UInt8]? { requests.popFirst() }
     func send(_ payload: [UInt8]) async throws { replies.append(payload) }
     func close() async { closed = true }
+}
+
+@Test(.enabled(if: ProcessInfo.processInfo.environment["NETHERNET_TEST_LIBRARY"] != nil))
+func nativeNetherNetConnectionCarriesLoginAndSpawn() async throws {
+    let library = try LibDataChannel(libraryPath: #require(ProcessInfo.processInfo.environment["NETHERNET_TEST_LIBRARY"]))
+    let signing = P384.Signing.PrivateKey()
+    let key = Array(signing.publicKey.derRepresentation)
+    let signaling = TestPeerSignaling()
+    let client = NetherNetConnection(networkID: 1, connectionID: 3, signaling: signaling, peer: try library.makePeer())
+    let server = NetherNetConnection(
+        networkID: 2, connectionID: 3, signaling: signaling, peer: try library.makePeer(), authenticatedRemoteKey: key
+    )
+    await signaling.bind(client: client, server: server)
+    let timeout = Task {
+        try await Task.sleep(for: .seconds(20))
+        await client.close()
+        await server.close()
+    }
+    defer { timeout.cancel() }
+
+    do {
+        try await runNativeSpawn(client: client, server: server, signing: signing, key: key)
+    } catch {
+        await client.close()
+        await server.close()
+        throw error
+    }
+    await client.close()
+    await server.close()
+}
+
+private func runNativeSpawn(
+    client: NetherNetConnection, server: NetherNetConnection, signing: P384.Signing.PrivateKey, key: [UInt8]
+) async throws {
+    try await client.start()
+    let deadline = ContinuousClock.now.advanced(by: .seconds(8))
+    while true {
+        let open = await (client.isOpen, server.isOpen)
+        if open.0 && open.1 { break }
+        guard .now < deadline else { throw BedrockError.timedOut }
+        try await Task.sleep(for: .milliseconds(10))
+    }
+
+    let protocolVersion: Int32 = 2225
+    let login = BedrockLoginServer(protocolVersion: protocolVersion) { _ in key }
+    async let serving: Void = serveNativeSpawn(on: server, login: login)
+    var incoming = client.messages.makeAsyncIterator()
+
+    func send(_ packet: BedrockPacket, framing: BedrockBatch.Framing = .negotiated) async throws {
+        try await client.send(BedrockBatch.encode([packet], framing: framing, transport: .nethernet))
+    }
+
+    func receive(framing: BedrockBatch.Framing = .negotiated) async throws -> [BedrockPacket] {
+        let bytes = try #require(try await incoming.next())
+        return try BedrockBatch.decode(bytes, framing: framing, transport: .nethernet)
+    }
+
+    let settings = try BedrockPacket(id: 193, payload: [0, 0, 8, 0xb1])
+    try await send(settings, framing: .initial)
+    #expect(try await receive(framing: .initial).map(\.id) == [NetworkSettings.packetID])
+
+    let token = try BedrockJWT.sign(Data("{}".utf8), with: signing)
+    let envelope = Data(#"{"AuthenticationType":0,"Token":"header.payload.signature"}"#.utf8)
+    try await send(makeLoginPacket(protocolVersion: protocolVersion, envelope: envelope, clientToken: token))
+    #expect(try await receive() == [PlayStatus.loginSuccess.packet()])
+    #expect(try await receive().map(\.id) == [ResourcePacksInfo.packetID])
+    try await send(ResourcePackClientResponse(status: .allPacksDownloaded).packet(format: .v26_60))
+    #expect(try await receive().map(\.id) == [ResourcePackStack.packetID])
+    try await send(ResourcePackClientResponse(status: .completed).packet(format: .v26_60))
+    #expect(try await receive().map(\.id) == [StartGame.packetID, ItemRegistry.packetID])
+
+    try await send(RequestChunkRadius(radius: 2, maximumRadius: 2).packet())
+    #expect(try await receive().map(\.id) == [ChunkRadiusUpdated.packetID])
+    #expect(try await receive().map(\.id) == [NetworkChunkPublisherUpdate.packetID])
+    #expect(try await receive().map(\.id) == [LevelChunk.packetID])
+    #expect(try await receive() == [PlayStatus.playerSpawn.packet()])
+    try await send(SetLocalPlayerAsInitialized(entityRuntimeID: 1).packet())
+    try await send(PlayerAction(runtimeID: 1, action: 8).packet())
+    try await serving
+}
+
+private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLoginServer) async throws {
+    let session = try await login.accept(on: server)
+    let game = StartGame(player: .init(uniqueID: 1, runtimeID: 1), world: .init(name: "Test World"))
+    let stack = ResourcePackStack(baseGameVersion: game.gameVersion)
+    let packs = try ResourcePackNegotiation(info: .init(), stack: stack, format: .v26_60)
+    let pending = try await session.negotiateResourcePacks(packs)
+    try await session.startGame(game, items: ItemRegistry(items: []))
+    let negotiated = try await session.negotiateChunkRadius(maximum: 2, pendingPackets: pending)
+    let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, payload: [1, 2, 0])
+    try await session.spawn(at: game.world.spawn, with: [chunk])
+    #expect(try await session.waitForSpawn(pendingPackets: negotiated.pendingPackets).isEmpty)
+    #expect(try await session.receive() == [PlayerAction(runtimeID: 1, action: 8).packet()])
+}
+
+private actor TestPeerSignaling: NetherNetSignaling {
+    private weak var client: NetherNetConnection?
+    private weak var server: NetherNetConnection?
+
+    func bind(client: NetherNetConnection, server: NetherNetConnection) {
+        self.client = client
+        self.server = server
+    }
+
+    func send(_ signal: Signal, to networkID: UInt64) async throws {
+        guard let receiver = networkID == 1 ? server : client else { throw ConnectionError.closed }
+        try await receiver.receive(signal)
+    }
 }

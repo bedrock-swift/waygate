@@ -23,7 +23,8 @@ let package = Package(
         ]),
         .executableTarget(name: "WayGateCLI", dependencies: ["WayGate", .product(name: "RakNet", package: "raknet")]),
         .testTarget(name: "WayGateTests", dependencies: [
-            "WayGate", .product(name: "RakNet", package: "raknet"), .product(name: "Crypto", package: "swift-crypto"),
+            "WayGate", .product(name: "RakNet", package: "raknet"), .product(name: "NetherNet", package: "nethernet"),
+            .product(name: "Crypto", package: "swift-crypto"),
             .product(name: "CryptoExtras", package: "swift-crypto")
         ])
     ]
