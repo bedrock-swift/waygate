@@ -1,5 +1,5 @@
 {
-  "originHash" : "e96d231ab90e5fcdd9631713f05a837db474200a0ec8686b57fb897778ec7646",
+  "originHash" : "7d9996fbdba7c4b85f0b91dc3d0b0be2387fa1b406399466941906c3c135f38b",
   "pins" : [
     {
       "identity" : "cryptoswift",
@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/bedrock-swift/nethernet.git",
       "state" : {
-        "revision" : "61fd01a925c5f2140db476d8b7bd8fd162e7382e"
+        "revision" : "c752362ff137d04b192e1ecb4bc20a06ad60acb2"
       }
     },
     {
