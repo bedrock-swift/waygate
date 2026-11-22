@@ -460,8 +460,17 @@ private func runNativeSpawn(
     #expect(introduction.map(\.id) == [NetworkChunkPublisherUpdate.packetID, AvailableActorIdentifiers.packetID])
     let registry = try AvailableActorIdentifiers(decoding: #require(introduction.last))
     #expect(registry == (try AvailableActorIdentifiers(names: ["minecraft:player"])))
-    #expect(try await receive().map(\.id) == [LevelChunk.packetID])
+    let chunks = try await receive()
+    let chunk = try LevelChunk(decoding: #require(chunks.first))
+    #expect(chunk.subChunkLimit == -1)
     #expect(try await receive() == [PlayStatus.playerSpawn.packet(), CreativeContent().packet()])
+    let request = SubChunkRequest(dimension: 0, center: .zero, offsets: [SIMD3(0, -1, 0)])
+    try await send(request.packet())
+    let responses = try await receive()
+    let subChunks = try SubChunkResponse(decoding: #require(responses.first))
+    #expect(subChunks == SubChunkResponse(dimension: 0, center: .zero, entries: [
+        .init(offset: SIMD3(0, -1, 0), status: .allAir)
+    ]))
     try await send(SetLocalPlayerAsInitialized(entityRuntimeID: 1).packet())
     let snapshot = try await receive()
     let inventory = try InventoryContent(decoding: #require(snapshot.first))
@@ -501,10 +510,19 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
     let pending = try await session.negotiateResourcePacks(packs)
     try await session.startGame(game, items: ItemRegistry(items: []))
     let negotiated = try await session.negotiateChunkRadius(maximum: 2, pendingPackets: pending)
-    let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, payload: [1, 2, 0])
+    let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, subChunkLimit: -1, payload: [1, 2, 0])
     let registry = try AvailableActorIdentifiers(names: ["minecraft:player"])
     try await session.spawn(at: game.world.spawn, with: [chunk], actorIdentifiers: registry)
-    #expect(try await session.waitForSpawn(pendingPackets: negotiated.pendingPackets).isEmpty)
+    let pendingPackets = try await session.waitForSpawn(
+        pendingPackets: negotiated.pendingPackets,
+        respondToSubChunkRequest: { request in
+            SubChunkResponse(dimension: request.dimension, center: request.center, entries: request.offsets.map {
+                .init(offset: $0, status: .allAir)
+            })
+        },
+        onPacket: nil
+    )
+    #expect(pendingPackets.isEmpty)
     let inventory = InventoryContent(
         windowID: 0, slots: Array(repeating: .empty, count: 36), container: FullContainerName(id: 0)
     )
