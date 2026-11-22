@@ -453,6 +453,10 @@ private func runNativeSpawn(
     #expect(try await receive().map(\.id) == [LevelChunk.packetID])
     #expect(try await receive() == [PlayStatus.playerSpawn.packet(), CreativeContent().packet()])
     try await send(SetLocalPlayerAsInitialized(entityRuntimeID: 1).packet())
+    let snapshot = try await receive()
+    let inventory = try InventoryContent(decoding: #require(snapshot.first))
+    #expect(inventory.windowID == 0)
+    #expect(inventory.slots == Array(repeating: .empty, count: 36))
     let movement = PlayerAuthInput(
         rotation: .zero, position: SIMD3(0, 64, 1), move: SIMD2(0, 1), headYaw: 0, flags: [10],
         inputMode: 1, playMode: 0, interactionModel: 1, interactionRotation: .zero, tick: 20, delta: SIMD3(0, 0, 1),
@@ -473,6 +477,10 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
     let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, payload: [1, 2, 0])
     try await session.spawn(at: game.world.spawn, with: [chunk])
     #expect(try await session.waitForSpawn(pendingPackets: negotiated.pendingPackets).isEmpty)
+    let inventory = InventoryContent(
+        windowID: 0, slots: Array(repeating: .empty, count: 36), container: FullContainerName(id: 0)
+    )
+    try await session.send([inventory.packet()])
     let received = try #require(try await session.receive())
     let first = try #require(received.first)
     let movement = try PlayerAuthInput(decoding: first)
