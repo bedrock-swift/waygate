@@ -330,7 +330,7 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
             try BedrockBatch.decode($0, framing: .negotiated, transport: .nethernet)
         }
         let publisher = NetworkChunkPublisherUpdate(position: game.world.spawn, radiusInBlocks: 128)
-        #expect(spawn == (try [[publisher.packet()], [chunk.packet()], [PlayStatus.playerSpawn.packet()]]))
+        #expect(spawn == (try [[publisher.packet()], [chunk.packet()], [PlayStatus.playerSpawn.packet(), CreativeContent().packet()]]))
         await #expect(throws: BedrockError.invalidSessionState) {
             try await session.spawn(at: game.world.spawn, with: [chunk])
         }
@@ -451,7 +451,7 @@ private func runNativeSpawn(
     #expect(try await receive().map(\.id) == [ChunkRadiusUpdated.packetID])
     #expect(try await receive().map(\.id) == [NetworkChunkPublisherUpdate.packetID])
     #expect(try await receive().map(\.id) == [LevelChunk.packetID])
-    #expect(try await receive() == [PlayStatus.playerSpawn.packet()])
+    #expect(try await receive() == [PlayStatus.playerSpawn.packet(), CreativeContent().packet()])
     try await send(SetLocalPlayerAsInitialized(entityRuntimeID: 1).packet())
     let movement = PlayerAuthInput(
         rotation: .zero, position: SIMD3(0, 64, 1), move: SIMD2(0, 1), headYaw: 0, flags: [10],
