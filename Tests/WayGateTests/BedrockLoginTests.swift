@@ -457,6 +457,12 @@ private func runNativeSpawn(
     let inventory = try InventoryContent(decoding: #require(snapshot.first))
     #expect(inventory.windowID == 0)
     #expect(inventory.slots == Array(repeating: .empty, count: 36))
+    let update = try await receive()
+    let slot = try InventorySlot(decoding: #require(update.first))
+    #expect(slot.windowID == 0)
+    #expect(slot.slot == 3)
+    #expect(slot.item.stack == ItemStack(networkID: 1, count: 2))
+    #expect(slot.item.stackNetworkID == 1)
     let movement = PlayerAuthInput(
         rotation: .zero, position: SIMD3(0, 64, 1), move: SIMD2(0, 1), headYaw: 0, flags: [10],
         inputMode: 1, playMode: 0, interactionModel: 1, interactionRotation: .zero, tick: 20, delta: SIMD3(0, 0, 1),
@@ -481,6 +487,8 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
         windowID: 0, slots: Array(repeating: .empty, count: 36), container: FullContainerName(id: 0)
     )
     try await session.send([inventory.packet()])
+    let item = ItemInstance(stack: ItemStack(networkID: 1, count: 2), stackNetworkID: 1)
+    try await session.send([InventorySlot(windowID: 0, slot: 3, item: item).packet()])
     let received = try #require(try await session.receive())
     let first = try #require(received.first)
     let movement = try PlayerAuthInput(decoding: first)
