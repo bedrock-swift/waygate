@@ -469,6 +469,9 @@ private func runNativeSpawn(
         analogueMove: .zero, cameraOrientation: SIMD3(0, 0, 1), rawMove: SIMD2(0, 1)
     )
     try await send(movement.packet())
+    let changes = try await receive()
+    let block = try UpdateBlock(decoding: #require(changes.first))
+    #expect(block == UpdateBlock(position: SIMD3(0, 63, 1), runtimeID: 42))
     try await serving
 }
 
@@ -495,6 +498,7 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
     #expect(movement.tick == 20)
     #expect(movement.position == SIMD3(0, 64, 1))
     #expect(movement.flags == [10])
+    try await session.send([UpdateBlock(position: SIMD3(0, 63, 1), runtimeID: 42).packet()])
 }
 
 private actor TestPeerSignaling: NetherNetSignaling {
