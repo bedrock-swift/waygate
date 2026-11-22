@@ -3,12 +3,18 @@ import RakNet
 public struct RakNetProxy: Sendable {
     private let listener: RakNetListener
     private let upstream: RakNetEndpoint
+    private let upstreamTimeout: Duration
 
     public var localAddress: RakNetEndpoint { listener.localAddress }
 
-    public init(on address: RakNetEndpoint, upstream: RakNetEndpoint, advertisement: [UInt8] = []) throws {
+    public init(
+        on address: RakNetEndpoint, upstream: RakNetEndpoint, advertisement: [UInt8] = [],
+        upstreamTimeout: Duration = .seconds(5)
+    ) throws {
+        guard upstreamTimeout > .zero else { throw RakNetTransportError.timedOut }
         listener = try RakNetListener.listen(on: address, advertisement: advertisement)
         self.upstream = upstream
+        self.upstreamTimeout = upstreamTimeout
     }
 
     public func run() async throws {
@@ -20,7 +26,7 @@ public struct RakNetProxy: Sendable {
 
     private func bridge(_ client: RakNetConnection) async {
         do {
-            let backend = try await RakNetConnection.dial(upstream)
+            let backend = try await RakNetConnection.dial(upstream, timeout: upstreamTimeout)
             do {
                 try await withThrowingTaskGroup(of: Void.self) { directions in
                     defer { directions.cancelAll() }

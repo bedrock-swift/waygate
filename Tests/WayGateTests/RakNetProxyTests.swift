@@ -30,3 +30,22 @@ import WayGate
     proxy.close()
     try await forwarding.value
 }
+
+@Test(.timeLimit(.minutes(1))) func proxyClosesClientWhenUpstreamDoesNotAnswer() async throws {
+    let loopback = RakNetEndpoint.ipv4(IPv4Endpoint(address: 0x7f000001, port: 0))
+    let backend = try RakNetListener.listen(on: loopback)
+    defer { backend.close() }
+    backend.block(loopback)
+
+    let proxy = try RakNetProxy(on: loopback, upstream: backend.localAddress, upstreamTimeout: .milliseconds(250))
+    let forwarding = Task { try await proxy.run() }
+    defer {
+        proxy.close()
+        forwarding.cancel()
+    }
+
+    let client = try await RakNetConnection.dial(proxy.localAddress)
+    #expect(try await client.receive() == nil)
+    proxy.close()
+    try await forwarding.value
+}
