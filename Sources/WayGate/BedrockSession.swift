@@ -120,6 +120,15 @@ public actor BedrockSession {
         return result
     }
 
+    public func updateChunkRadius(_ request: RequestChunkRadius, maximum: Int32) async throws -> Int32 {
+        guard !closed else { throw BedrockError.closed }
+        guard case .spawned = worldState else { throw BedrockError.invalidSessionState }
+        guard maximum > 0, request.radius > 0 else { throw BedrockError.malformed }
+        let radius = min(request.radius, maximum)
+        try await send([ChunkRadiusUpdated(radius: radius).packet()])
+        return radius
+    }
+
     private func runExchange<Result: Sendable>(
         timeout: Duration, operation: @escaping @Sendable () async throws -> Result
     ) async throws -> Result {
