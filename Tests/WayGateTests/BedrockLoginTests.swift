@@ -448,7 +448,12 @@ private func runNativeSpawn(
     #expect(try await receive().map(\.id) == [LevelChunk.packetID])
     #expect(try await receive() == [PlayStatus.playerSpawn.packet()])
     try await send(SetLocalPlayerAsInitialized(entityRuntimeID: 1).packet())
-    try await send(PlayerAction(runtimeID: 1, action: 8).packet())
+    let movement = PlayerAuthInput(
+        rotation: .zero, position: SIMD3(0, 64, 1), move: SIMD2(0, 1), headYaw: 0, flags: [10],
+        inputMode: 1, playMode: 0, interactionModel: 1, interactionRotation: .zero, tick: 20, delta: SIMD3(0, 0, 1),
+        analogueMove: .zero, cameraOrientation: SIMD3(0, 0, 1), rawMove: SIMD2(0, 1)
+    )
+    try await send(movement.packet())
     try await serving
 }
 
@@ -463,7 +468,12 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
     let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, payload: [1, 2, 0])
     try await session.spawn(at: game.world.spawn, with: [chunk])
     #expect(try await session.waitForSpawn(pendingPackets: negotiated.pendingPackets).isEmpty)
-    #expect(try await session.receive() == [PlayerAction(runtimeID: 1, action: 8).packet()])
+    let received = try #require(try await session.receive())
+    let first = try #require(received.first)
+    let movement = try PlayerAuthInput(decoding: first)
+    #expect(movement.tick == 20)
+    #expect(movement.position == SIMD3(0, 64, 1))
+    #expect(movement.flags == [10])
 }
 
 private actor TestPeerSignaling: NetherNetSignaling {
