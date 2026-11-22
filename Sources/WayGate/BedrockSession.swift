@@ -232,7 +232,8 @@ public actor BedrockSession {
     }
 
     public func spawn(
-        at position: SIMD3<Int32>, with chunks: [LevelChunk], creativeContent: CreativeContent? = nil
+        at position: SIMD3<Int32>, with chunks: [LevelChunk], creativeContent: CreativeContent? = nil,
+        actorIdentifiers: AvailableActorIdentifiers? = nil
     ) async throws {
         guard !closed else { throw BedrockError.closed }
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
@@ -240,6 +241,9 @@ public actor BedrockSession {
         guard chunks.allSatisfy({ $0.dimension == world.dimension }) else { throw BedrockError.malformed }
         guard let blockRadius = UInt32(exactly: Int64(radius) * 16) else { throw BedrockError.limitExceeded }
         try Task.checkCancellation()
+        let publisher = NetworkChunkPublisherUpdate(position: position, radiusInBlocks: blockRadius)
+        var introduction = try [publisher.packet()]
+        if let actorIdentifiers { introduction.append(try actorIdentifiers.packet()) }
         var completion = try [PlayStatus.playerSpawn.packet()]
         if creativeContent != nil || login.protocolVersion == 2225 {
             completion.append(try (creativeContent ?? CreativeContent()).packet())
@@ -248,8 +252,7 @@ public actor BedrockSession {
         exchanging = true
         defer { exchanging = false }
         do {
-            let publisher = NetworkChunkPublisherUpdate(position: position, radiusInBlocks: blockRadius)
-            try await sendBatch([publisher.packet()])
+            try await sendBatch(introduction)
             for chunk in chunks {
                 try Task.checkCancellation()
                 try await sendBatch([chunk.packet()])

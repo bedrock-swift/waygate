@@ -456,7 +456,10 @@ private func runNativeSpawn(
 
     try await send(RequestChunkRadius(radius: 2, maximumRadius: 2).packet())
     #expect(try await receive().map(\.id) == [ChunkRadiusUpdated.packetID])
-    #expect(try await receive().map(\.id) == [NetworkChunkPublisherUpdate.packetID])
+    let introduction = try await receive()
+    #expect(introduction.map(\.id) == [NetworkChunkPublisherUpdate.packetID, AvailableActorIdentifiers.packetID])
+    let registry = try AvailableActorIdentifiers(decoding: #require(introduction.last))
+    #expect(registry == (try AvailableActorIdentifiers(names: ["minecraft:player"])))
     #expect(try await receive().map(\.id) == [LevelChunk.packetID])
     #expect(try await receive() == [PlayStatus.playerSpawn.packet(), CreativeContent().packet()])
     try await send(SetLocalPlayerAsInitialized(entityRuntimeID: 1).packet())
@@ -499,7 +502,8 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
     try await session.startGame(game, items: ItemRegistry(items: []))
     let negotiated = try await session.negotiateChunkRadius(maximum: 2, pendingPackets: pending)
     let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, payload: [1, 2, 0])
-    try await session.spawn(at: game.world.spawn, with: [chunk])
+    let registry = try AvailableActorIdentifiers(names: ["minecraft:player"])
+    try await session.spawn(at: game.world.spawn, with: [chunk], actorIdentifiers: registry)
     #expect(try await session.waitForSpawn(pendingPackets: negotiated.pendingPackets).isEmpty)
     let inventory = InventoryContent(
         windowID: 0, slots: Array(repeating: .empty, count: 36), container: FullContainerName(id: 0)
