@@ -159,7 +159,8 @@ public actor BedrockSession {
     }
 
     private func receiveMatching<Value>(
-        _ id: UInt16, pendingPackets: [BedrockPacket], decode: (BedrockPacket) throws -> Value?
+        _ id: UInt16, pendingPackets: [BedrockPacket], onPacket: (@Sendable (BedrockPacket) -> Void)? = nil,
+        decode: (BedrockPacket) throws -> Value?
     ) async throws -> (Value, [BedrockPacket]) {
         var batch = pendingPackets
         var deferred: [BedrockPacket] = []
@@ -167,6 +168,7 @@ public actor BedrockSession {
         while true {
             var match: Value?
             for packet in batch {
+                onPacket?(packet)
                 if packet.id == NetworkStackLatency.packetID,
                    let response = try NetworkStackLatency.response(to: packet) {
                     try await sendBatch([response])
@@ -262,13 +264,16 @@ public actor BedrockSession {
     }
 
     public func waitForSpawn(
-        pendingPackets: [BedrockPacket] = [], timeout: Duration = .seconds(15)
+        pendingPackets: [BedrockPacket] = [], timeout: Duration = .seconds(15),
+        onPacket: (@Sendable (BedrockPacket) -> Void)? = nil
     ) async throws -> [BedrockPacket] {
         guard !closed else { throw BedrockError.closed }
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
         guard case .awaitingInitialization(let runtimeID) = worldState else { throw BedrockError.invalidSessionState }
         let (_, deferred) = try await runExchange(timeout: timeout) {
-            try await self.receiveMatching(SetLocalPlayerAsInitialized.packetID, pendingPackets: pendingPackets) { packet -> Void? in
+            try await self.receiveMatching(
+                SetLocalPlayerAsInitialized.packetID, pendingPackets: pendingPackets, onPacket: onPacket
+            ) { packet -> Void? in
                 let acknowledgement = try SetLocalPlayerAsInitialized(decoding: packet)
                 guard acknowledgement.entityRuntimeID == runtimeID else { throw BedrockError.malformed }
                 return ()

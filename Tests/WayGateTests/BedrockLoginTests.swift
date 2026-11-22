@@ -340,7 +340,14 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
             }
             #expect(await transport.closed)
         } else {
-            let resumed = try await session.waitForSpawn(pendingPackets: radius.pendingPackets)
+            let observed = AsyncStream<BedrockPacket>.makeStream()
+            let resumed = try await session.waitForSpawn(pendingPackets: radius.pendingPackets) {
+                observed.continuation.yield($0)
+            }
+            observed.continuation.finish()
+            var packets: [BedrockPacket] = []
+            for await packet in observed.stream { packets.append(packet) }
+            #expect(packets == [deferred, nextPacket, ack, nextPacket])
             #expect(resumed == [deferred, nextPacket, nextPacket])
             let afterDimensionChange = try await session.waitForDimensionChange(pendingPackets: resumed)
             let latencyReply = try #require(await transport.replies.last)
