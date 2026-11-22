@@ -267,6 +267,7 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
     let ack = try SetLocalPlayerAsInitialized(entityRuntimeID: scenario == .wrongRuntimeID ? 2 : 1).packet()
     let jump = try PlayerAction(runtimeID: 1, action: 8).packet()
     let dimensionDone = try PlayerAction(runtimeID: 1, action: PlayerAction.dimensionChangeDone).packet()
+    let respawn = try Respawn(position: .zero, state: .clientReadyToSpawn, runtimeID: 1).packet()
     let transport = LoginTransport([
         try BedrockBatch.encode([settings], transport: .nethernet),
         try BedrockBatch.encode([request], framing: .negotiated, transport: .nethernet),
@@ -277,7 +278,8 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
         try BedrockBatch.encode([
             jump, NetworkStackLatency(timestamp: 42, needsResponse: true).packet(sender: 1),
             dimensionDone, NetworkStackLatency(timestamp: 43, needsResponse: false).packet(), nextPacket
-        ], framing: .negotiated, transport: .nethernet)
+        ], framing: .negotiated, transport: .nethernet),
+        try BedrockBatch.encode([respawn, nextPacket], framing: .negotiated, transport: .nethernet)
     ])
     let key = Array(authenticatedKey.derRepresentation)
 
@@ -343,6 +345,8 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
             #expect(try BedrockBatch.decode(latencyReply, framing: .negotiated, transport: .nethernet) == [reply])
             let pendingReply = try NetworkStackLatency(timestamp: 43, needsResponse: false).packet()
             #expect(afterDimensionChange == [deferred, nextPacket, nextPacket, jump, pendingReply, nextPacket])
+            let afterRespawn = try await session.waitForRespawnRequest(pendingPackets: afterDimensionChange)
+            #expect(afterRespawn == afterDimensionChange + [nextPacket])
         }
         await session.close()
     } else {

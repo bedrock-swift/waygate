@@ -276,6 +276,24 @@ public actor BedrockSession {
         return deferred
     }
 
+    public func waitForRespawnRequest(
+        pendingPackets: [BedrockPacket] = [], timeout: Duration = .seconds(15)
+    ) async throws -> [BedrockPacket] {
+        guard !closed else { throw BedrockError.closed }
+        guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
+        guard case .spawned(let runtimeID) = worldState else { throw BedrockError.invalidSessionState }
+        let (_, deferred) = try await runExchange(timeout: timeout) {
+            try await self.receiveMatching(Respawn.packetID, pendingPackets: pendingPackets) { packet -> Void? in
+                let request = try Respawn(decoding: packet)
+                guard request.state == .clientReadyToSpawn, request.runtimeID == runtimeID else {
+                    throw BedrockError.malformed
+                }
+                return ()
+            }
+        }
+        return deferred
+    }
+
     public func close() async {
         guard !closed else { return }
         closed = true
