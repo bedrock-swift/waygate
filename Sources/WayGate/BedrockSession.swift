@@ -313,6 +313,16 @@ public actor BedrockSession {
         return deferred
     }
 
+    public func disconnect(_ reason: Disconnect, timeout: Duration = .seconds(2)) async throws {
+        guard !closed else { return }
+        guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
+        let packet = try reason.packet()
+        try await runExchange(timeout: timeout) {
+            try await self.sendBatch([packet])
+            while try await self.receiveBatch() != nil {} // let the peer close after reading the reason
+        }
+    }
+
     public func close() async {
         guard !closed else { return }
         closed = true

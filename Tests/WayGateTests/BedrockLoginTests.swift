@@ -476,6 +476,10 @@ private func runNativeSpawn(
     #expect(attributes.runtimeID == 1)
     #expect(attributes.tick == 20)
     #expect(attributes.attributes.first?.value == 16)
+    let closing = try await receive()
+    let reason = try Disconnect(decoding: #require(closing.first))
+    #expect(reason.screen?.message == "Session ended")
+    await client.close()
     try await serving
 }
 
@@ -509,6 +513,8 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
     )
     let attributes = UpdateAttributes(runtimeID: 1, attributes: [health], tick: movement.tick)
     try await session.send([block.packet(), attributes.packet()])
+    try await session.disconnect(Disconnect(reason: 0, screen: .init(message: "Session ended")))
+    #expect(try await session.receive() == nil)
 }
 
 private actor TestPeerSignaling: NetherNetSignaling {
