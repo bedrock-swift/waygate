@@ -426,7 +426,12 @@ private func runNativeSpawn(
 
     let protocolVersion: Int32 = 2225
     let login = BedrockLoginServer(protocolVersion: protocolVersion) { _ in key }
-    async let serving: Void = serveNativeSpawn(on: server, login: login)
+    let stream = AsyncStream<NetherNetConnection>.makeStream()
+    stream.continuation.yield(server)
+    defer { stream.continuation.finish() }
+    async let serving: Void = login.handleConnections(on: stream.stream, onError: { Issue.record($0) }) { session in
+        try await serveNativeSpawn(on: session)
+    }
     var incoming = client.messages.makeAsyncIterator()
 
     func send(_ packet: BedrockPacket, framing: BedrockBatch.Framing = .negotiated) async throws {
@@ -504,11 +509,11 @@ private func runNativeSpawn(
     let reason = try Disconnect(decoding: #require(closing.first))
     #expect(reason.screen?.message == "Session ended")
     await client.close()
-    try await serving
+    stream.continuation.finish()
+    await serving
 }
 
-private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLoginServer) async throws {
-    let session = try await login.accept(on: server)
+private func serveNativeSpawn(on session: BedrockSession) async throws {
     let game = StartGame(player: .init(uniqueID: 1, runtimeID: 1), world: .init(name: "Test World"))
     let stack = ResourcePackStack(baseGameVersion: game.gameVersion)
     let packs = try ResourcePackNegotiation(info: .init(), stack: stack, format: .v26_60)

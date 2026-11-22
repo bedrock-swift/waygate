@@ -1,6 +1,32 @@
 import NetherNet
 
 extension BedrockLoginServer {
+    public func handleConnections(
+        on connections: AsyncStream<NetherNetConnection>, loginTimeout: Duration = .seconds(10),
+        onError: (@Sendable (any Error) -> Void)? = nil,
+        handle: @escaping @Sendable (BedrockSession) async throws -> Void
+    ) async {
+        await withDiscardingTaskGroup { workers in
+            for await connection in connections {
+                if Task.isCancelled {
+                    await connection.close()
+                    break
+                }
+                workers.addTask {
+                    do {
+                        try Task.checkCancellation()
+                        let session = try await accept(on: connection, timeout: loginTimeout)
+                        try await handle(session)
+                    } catch {
+                        if !Task.isCancelled { onError?(error) }
+                    }
+                    await connection.close()
+                }
+            }
+            workers.cancelAll()
+        }
+    }
+
     public func accept(on connection: NetherNetConnection, timeout: Duration = .seconds(10)) async throws -> BedrockSession {
         guard let key = connection.authenticatedRemoteKey else {
             await connection.close()

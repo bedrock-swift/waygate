@@ -25,7 +25,7 @@ Add WayGate to your Swift package and use the `WayGate` product. Swift 6.1 or la
 .package(url: "https://github.com/bedrock-swift/waygate.git", branch: "main")
 ```
 
-Use `BedrockLoginServer.multiplayer(keys:)` with `MinecraftLoginKeys` for the Bedrock 26.60 protocol. Pass an authenticated NetherNet connection to `login.accept(on:)` to open a game session. The [NetherNet README](https://github.com/bedrock-swift/nethernet#http-signaling) covers the HTTP signaling setup.
+Create a login server with `BedrockLoginServer.multiplayer(keys:)` and pass your NetherNet connection stream to `login.handleConnections(on:handle:)`. The [NetherNet README](https://github.com/bedrock-swift/nethernet#http-signaling) covers HTTP signaling and authentication.
 
 ### RakNet relay
 
