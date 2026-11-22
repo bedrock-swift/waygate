@@ -33,19 +33,13 @@ async function artwork() {
 }
 
 function render(count, png) {
-  const label = count === null ? "Online unavailable" : count + " online";
-  const icon = png ? `<image href="data:image/png;base64,${png}" width="320" height="76" clip-path="url(#icon)"/>` : "";
+  const label = count === null ? "" : count + " ONLINE";
+  const background = png ? `<image href="data:image/png;base64,${png}" width="320" height="76"/>` :
+    '<rect width="320" height="76" rx="12" fill="#C94816"/><text x="63" y="32" fill="white" font-family="sans-serif" font-size="18">Bedrock Swift</text>';
   return new Response(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="76" viewBox="0 0 320 76" role="img">
   <title>Bedrock Swift on Discord</title>
-  <defs><clipPath id="icon"><circle cx="32.25" cy="38.25" r="20"/></clipPath></defs>
-  <rect width="320" height="76" rx="12" fill="#BE4219"/>
-  ${icon}
-  <text x="63" y="34" fill="#FFF" font-family="Segoe UI, sans-serif" font-size="16" font-weight="600">Bedrock Swift</text>
-  <circle cx="66" cy="49" r="3" fill="${count === null ? "#F4BD98" : "#B6EEA0"}"/>
-  <text x="74" y="53" fill="#FFE7D9" font-family="Segoe UI, sans-serif" font-size="11">${label}</text>
-  <rect x="199" y="21" width="110" height="34" rx="8" fill="#8E2B10"/>
-  <text x="211" y="42" fill="#FFF" font-family="Segoe UI, sans-serif" font-size="12" font-weight="600">Join Discord</text>
-  <path d="m290 34 4 4-4 4" fill="none" stroke="#FFF" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+  ${background}
+  <text x="63" y="55" fill="#FFE7D9" font-family="Segoe UI, sans-serif" font-size="11">${label}</text>
 </svg>`, {
     headers: {
       "Content-Type": "image/svg+xml; charset=utf-8",
