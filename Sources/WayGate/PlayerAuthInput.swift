@@ -96,6 +96,37 @@ public struct PlayerAuthInput: Equatable, Sendable {
         return try BedrockPacket(id: Self.packetID, sender: sender, target: target, payload: payload)
     }
 
+    public struct BlockAction: Equatable, Sendable {
+        public let action: Int32
+        public let position: SIMD3<Int32>
+        public let face: Int32
+    }
+
+    public struct MovementActions: Equatable, Sendable {
+        public let blocks: [BlockAction]?
+        public let vehicleRotation: SIMD2<Float>?
+        public let predictedVehicleID: Int64?
+    }
+
+    public func movementActions() throws -> MovementActions? {
+        var reader = BedrockReader(optionalData[...])
+        guard try !reader.bool(), try !reader.bool() else { return nil } // inventory data precedes movement actions
+        let blocks = try reader.optional { reader in
+            let count = try reader.varUInt()
+            guard count <= 100 else { throw BedrockError.limitExceeded }
+            return try reader.list(count: count, minimumElementSize: 5) {
+                try BlockAction(action: $0.varInt(), position: $0.blockPosition(), face: $0.varInt())
+            }
+        }
+        let vehicleRotation = try reader.optional { try SIMD2($0.float32(), $0.float32()) }
+        let predictedVehicleID = try reader.optional {
+            let encoded = try $0.varULong()
+            return Int64(bitPattern: (encoded >> 1) ^ (0 &- (encoded & 1)))
+        }
+        guard reader.isEmpty else { throw BedrockError.malformed }
+        return MovementActions(blocks: blocks, vehicleRotation: vehicleRotation, predictedVehicleID: predictedVehicleID)
+    }
+
     private static func validate(flags: [Int32]) throws {
         guard flags.count <= Int(flagCount), flags.allSatisfy({ $0 >= 0 && UInt32($0) < flagCount }),
               Set(flags).count == flags.count else { throw BedrockError.malformed }

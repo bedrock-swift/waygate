@@ -29,6 +29,26 @@ import WayGate
     #expect(decoded.rawMove == input.rawMove)
     #expect(try decoded.packet() == vehiclePacket)
 
+    #expect(try decoded.movementActions()?.predictedVehicleID == 3)
+    #expect(try input.movementActions()?.blocks == nil)
+
+    var withActions = payload
+    let data: [UInt8] = [0, 0, 1, 1, 0, 1, 4, 6, 2, 1, 0, 0, 0x80, 0x3f, 0, 0, 0, 0x40, 1, 7]
+    withActions.replaceSubrange(optionalStart..<(optionalStart + 5), with: data)
+    let actionPacket = try BedrockPacket(id: 144, payload: withActions)
+    let actions = try #require(try PlayerAuthInput(decoding: actionPacket).movementActions())
+    let block = try #require(actions.blocks?.first)
+    #expect(actions.blocks?.count == 1)
+    #expect(block.action == 0)
+    #expect(block.position == SIMD3(-1, 2, 3))
+    #expect(block.face == 1)
+    #expect(actions.vehicleRotation == SIMD2(1, 2))
+    #expect(actions.predictedVehicleID == -4)
+
+    withActions[optionalStart] = 1
+    let inventoryPacket = try BedrockPacket(id: 144, payload: withActions)
+    #expect(try PlayerAuthInput(decoding: inventoryPacket).movementActions() == nil)
+
     var duplicateFlag = payload
     duplicateFlag.replaceSubrange(34...35, with: [20])
     for invalid in [duplicateFlag, Array(payload.dropLast())] {
