@@ -472,6 +472,10 @@ private func runNativeSpawn(
     let changes = try await receive()
     let block = try UpdateBlock(decoding: #require(changes.first))
     #expect(block == UpdateBlock(position: SIMD3(0, 63, 1), runtimeID: 42))
+    let attributes = try UpdateAttributes(decoding: #require(changes.last))
+    #expect(attributes.runtimeID == 1)
+    #expect(attributes.tick == 20)
+    #expect(attributes.attributes.first?.value == 16)
     try await serving
 }
 
@@ -498,7 +502,13 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
     #expect(movement.tick == 20)
     #expect(movement.position == SIMD3(0, 64, 1))
     #expect(movement.flags == [10])
-    try await session.send([UpdateBlock(position: SIMD3(0, 63, 1), runtimeID: 42).packet()])
+    let block = UpdateBlock(position: SIMD3(0, 63, 1), runtimeID: 42)
+    let health = UpdateAttributes.Attribute(
+        name: "minecraft:health", minimum: 0, maximum: 20, value: 16, defaultMinimum: 0,
+        defaultMaximum: 20, defaultValue: 20
+    )
+    let attributes = UpdateAttributes(runtimeID: 1, attributes: [health], tick: movement.tick)
+    try await session.send([block.packet(), attributes.packet()])
 }
 
 private actor TestPeerSignaling: NetherNetSignaling {
