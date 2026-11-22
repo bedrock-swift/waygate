@@ -450,9 +450,12 @@ private func runNativeSpawn(
     try await send(ResourcePackClientResponse(status: .allPacksDownloaded).packet(format: .v26_60))
     #expect(try await receive().map(\.id) == [ResourcePackStack.packetID])
     try await send(ResourcePackClientResponse(status: .completed).packet(format: .v26_60))
-    #expect(try await receive().map(\.id) == [
-        JigsawStructureData.packetID, VoxelShapes.packetID, StartGame.packetID, ItemRegistry.packetID
+    let worldPackets = try await receive()
+    #expect(worldPackets.map(\.id) == [
+        JigsawStructureData.packetID, VoxelShapes.packetID, StartGame.packetID, ItemRegistry.packetID,
+        BiomeDefinitionList.packetID
     ])
+    #expect(worldPackets.last == (try nativeSpawnBiomes.packet()))
 
     try await send(RequestChunkRadius(radius: 2, maximumRadius: 2).packet())
     #expect(try await receive().map(\.id) == [ChunkRadiusUpdated.packetID])
@@ -508,7 +511,7 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
     let stack = ResourcePackStack(baseGameVersion: game.gameVersion)
     let packs = try ResourcePackNegotiation(info: .init(), stack: stack, format: .v26_60)
     let pending = try await session.negotiateResourcePacks(packs)
-    try await session.startGame(game, items: ItemRegistry(items: []))
+    try await session.startGame(game, items: ItemRegistry(items: []), biomes: nativeSpawnBiomes)
     let negotiated = try await session.negotiateChunkRadius(maximum: 2, pendingPackets: pending)
     let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, subChunkLimit: -1, payload: [1, 2, 0])
     let registry = try AvailableActorIdentifiers(names: ["minecraft:player"])
@@ -545,6 +548,13 @@ private func serveNativeSpawn(on server: NetherNetConnection, login: BedrockLogi
     try await session.disconnect(Disconnect(reason: 0, screen: .init(message: "Session ended")))
     #expect(try await session.receive() == nil)
 }
+
+private let nativeSpawnBiomes = BiomeDefinitionList(definitions: [
+    .init(
+        name: "plains", temperature: 0.8, downfall: 0.4, depth: 0.125, scale: 0.05,
+        mapWaterColor: 0xa544aff5, rain: true
+    )
+])
 
 private actor TestPeerSignaling: NetherNetSignaling {
     private weak var client: NetherNetConnection?

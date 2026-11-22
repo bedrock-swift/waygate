@@ -217,7 +217,8 @@ public actor BedrockSession {
 
     public func startGame(
         _ game: StartGame, items: ItemRegistry, dimensions: DimensionData? = nil,
-        structures: JigsawStructureData? = nil, voxelShapes: VoxelShapes? = nil
+        structures: JigsawStructureData? = nil, voxelShapes: VoxelShapes? = nil,
+        biomes: BiomeDefinitionList? = nil
     ) async throws {
         guard !closed else { throw BedrockError.closed }
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
@@ -232,6 +233,7 @@ public actor BedrockSession {
             packets.append(try (voxelShapes ?? VoxelShapes()).packet())
         }
         packets += try [game.packet(), items.packet()]
+        if let biomes { packets.append(try biomes.packet()) }
         try await sendBatch(packets)
         worldState = .started(WorldIdentity(dimension: game.world.dimension, runtimeID: game.player.runtimeID))
     }
