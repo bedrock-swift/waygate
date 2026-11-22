@@ -298,10 +298,13 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
             info: ResourcePacksInfo(), stack: ResourcePackStack(baseGameVersion: game.gameVersion), format: .v26_60
         )
         #expect(try await session.negotiateResourcePacks(packs).isEmpty)
-        try await session.startGame(game, items: items)
+        let dimensions = DimensionData(definitions: [])
+        try await session.startGame(game, items: items, dimensions: dimensions)
         let start = try #require(await transport.replies.last)
         let packets = try BedrockBatch.decode(start, framing: .negotiated, transport: .nethernet)
-        #expect(packets == (try [game.packet(), items.packet()]))
+        #expect(packets == (try [
+            dimensions.packet(), JigsawStructureData.empty().packet(), VoxelShapes().packet(), game.packet(), items.packet()
+        ]))
         await #expect(throws: BedrockError.invalidSessionState) { try await session.startGame(game, items: items) }
 
         let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, payload: [1, 2, 0])
@@ -440,7 +443,9 @@ private func runNativeSpawn(
     try await send(ResourcePackClientResponse(status: .allPacksDownloaded).packet(format: .v26_60))
     #expect(try await receive().map(\.id) == [ResourcePackStack.packetID])
     try await send(ResourcePackClientResponse(status: .completed).packet(format: .v26_60))
-    #expect(try await receive().map(\.id) == [StartGame.packetID, ItemRegistry.packetID])
+    #expect(try await receive().map(\.id) == [
+        JigsawStructureData.packetID, VoxelShapes.packetID, StartGame.packetID, ItemRegistry.packetID
+    ])
 
     try await send(RequestChunkRadius(radius: 2, maximumRadius: 2).packet())
     #expect(try await receive().map(\.id) == [ChunkRadiusUpdated.packetID])

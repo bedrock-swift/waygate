@@ -208,11 +208,24 @@ public actor BedrockSession {
         throw BedrockError.closed
     }
 
-    public func startGame(_ game: StartGame, items: ItemRegistry) async throws {
+    public func startGame(
+        _ game: StartGame, items: ItemRegistry, dimensions: DimensionData? = nil,
+        structures: JigsawStructureData? = nil, voxelShapes: VoxelShapes? = nil
+    ) async throws {
         guard !closed else { throw BedrockError.closed }
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
         guard packsNegotiated, case .idle = worldState else { throw BedrockError.invalidSessionState }
-        try await sendBatch([game.packet(), items.packet()])
+        var packets: [BedrockPacket] = []
+        if let dimensions { packets.append(try dimensions.packet()) }
+        let usesWorldRegistries = login.protocolVersion == 2225
+        if structures != nil || usesWorldRegistries {
+            packets.append(try (structures ?? JigsawStructureData.empty()).packet())
+        }
+        if voxelShapes != nil || usesWorldRegistries {
+            packets.append(try (voxelShapes ?? VoxelShapes()).packet())
+        }
+        packets += try [game.packet(), items.packet()]
+        try await sendBatch(packets)
         worldState = .started(WorldIdentity(dimension: game.world.dimension, runtimeID: game.player.runtimeID))
     }
 

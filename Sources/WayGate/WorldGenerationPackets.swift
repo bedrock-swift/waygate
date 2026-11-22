@@ -43,6 +43,17 @@ public struct JigsawStructureData: Equatable, Sendable {
     public static let packetID: UInt16 = 213
     public let structureData: NetworkNBT
 
+    static func empty() throws -> Self {
+        var bytes: [UInt8] = [10, 0]
+        for name in ["processors", "template_pools", "jigsaws", "structure_sets"] {
+            bytes.append(9)
+            try bytes.appendString(name)
+            bytes += [10, 0] // empty compound list
+        }
+        bytes.append(0)
+        return try Self(structureData: NetworkNBT(bytes: bytes))
+    }
+
     public init(structureData: NetworkNBT) {
         self.structureData = structureData
     }
