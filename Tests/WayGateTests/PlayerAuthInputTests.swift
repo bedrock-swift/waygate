@@ -45,9 +45,28 @@ import WayGate
     #expect(actions.vehicleRotation == SIMD2(1, 2))
     #expect(actions.predictedVehicleID == -4)
 
-    withActions[optionalStart] = 1
+    withActions[optionalStart + 1] = 1
     let inventoryPacket = try BedrockPacket(id: 144, payload: withActions)
     #expect(try PlayerAuthInput(decoding: inventoryPacket).movementActions() == nil)
+
+    let interaction: [UInt8] = [
+        1, 0, 0, 0, 2, 1, 1, 4, 6, 2, 6, 1, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0x80, 0x3f, 0, 0, 0, 0, 0, 0, 0, 0,
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+        42, 1, 0
+    ]
+    var withInteraction = payload
+    withInteraction.replaceSubrange(optionalStart..<(optionalStart + 5), with: interaction + data.dropFirst())
+    let interactionPacket = try BedrockPacket(id: 144, payload: withInteraction)
+    let inputWithInteraction = try PlayerAuthInput(decoding: interactionPacket)
+    let item = try #require(try inputWithInteraction.itemInteraction())
+    #expect(item.blockPosition == SIMD3(-1, 2, 3))
+    #expect(item.hotbarSlot == 3)
+    #expect(item.hand == 1)
+    #expect(item.heldItem == .empty)
+    #expect(item.position == SIMD3(1, 0, 0))
+    #expect(item.blockRuntimeID == 42)
+    #expect(try inputWithInteraction.movementActions() == actions)
 
     var duplicateFlag = payload
     duplicateFlag.replaceSubrange(34...35, with: [20])

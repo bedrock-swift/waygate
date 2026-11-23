@@ -110,7 +110,8 @@ public struct PlayerAuthInput: Equatable, Sendable {
 
     public func movementActions() throws -> MovementActions? {
         var reader = BedrockReader(optionalData[...])
-        guard try !reader.bool(), try !reader.bool() else { return nil } // inventory data precedes movement actions
+        _ = try reader.optional { try ItemInteraction(reading: &$0) }
+        guard try !reader.bool() else { return nil } // stack request precedes movement actions
         let blocks = try reader.optional { reader in
             let count = try reader.varUInt()
             guard count <= 100 else { throw BedrockError.limitExceeded }
