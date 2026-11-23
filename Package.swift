@@ -8,7 +8,7 @@ let package = Package(
         .executable(name: "waygate", targets: ["WayGateCLI"])
     ],
     dependencies: [
-        .package(url: "https://github.com/bedrock-swift/nethernet.git", revision: "e3d1b522b88fd7fad7ec028f2185e505c9906d27"),
+        .package(url: "https://github.com/bedrock-swift/nethernet.git", revision: "821f98e735904c3d32c7d5eaad02528907f26d29"),
         .package(url: "https://github.com/bedrock-swift/raknet.git", revision: "49151d10ed2d40f6d8279fafb8b2b747b2385aa7"),
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
         .package(url: "https://github.com/krzyzanowskim/CryptoSwift.git", exact: "1.9.0")
