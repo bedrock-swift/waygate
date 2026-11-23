@@ -248,9 +248,10 @@ enum JoinCase: Sendable {
     case matching
     case wrongKey
     case wrongRuntimeID
+    case peerDisconnect
 }
 
-@Test(arguments: [JoinCase.matching, .wrongKey, .wrongRuntimeID])
+@Test(arguments: [JoinCase.matching, .wrongKey, .wrongRuntimeID, .peerDisconnect])
 func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async throws {
     let signing = P384.Signing.PrivateKey()
     let authenticatedKey = scenario == .wrongKey ? P384.Signing.PrivateKey().publicKey : signing.publicKey
@@ -264,7 +265,11 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
     let packComplete = try ResourcePackClientResponse(status: .completed).packet(format: .v26_60)
     let radiusRequest = try RequestChunkRadius(radius: 18, maximumRadius: 24).packet()
     let nextPacket = try BedrockPacket(id: 9, payload: [1])
-    let ack = try SetLocalPlayerAsInitialized(entityRuntimeID: scenario == .wrongRuntimeID ? 2 : 1).packet()
+    let ack = if scenario == .peerDisconnect {
+        try Disconnect(reason: 44).packet()
+    } else {
+        try SetLocalPlayerAsInitialized(entityRuntimeID: scenario == .wrongRuntimeID ? 2 : 1).packet()
+    }
     let jump = try PlayerAction(runtimeID: 1, action: 8).packet()
     let dimensionDone = try PlayerAction(runtimeID: 1, action: PlayerAction.dimensionChangeDone).packet()
     let respawn = try Respawn(position: .zero, state: .clientReadyToSpawn, runtimeID: 1).packet()
@@ -341,7 +346,12 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
         await #expect(throws: BedrockError.invalidSessionState) {
             try await session.spawn(at: game.world.spawn, with: [chunk])
         }
-        if scenario == .wrongRuntimeID {
+        if scenario == .peerDisconnect {
+            await #expect(throws: BedrockError.peerDisconnected(reason: 44)) {
+                try await session.waitForSpawn(pendingPackets: radius.pendingPackets)
+            }
+            #expect(await transport.closed)
+        } else if scenario == .wrongRuntimeID {
             await #expect(throws: BedrockError.malformed) {
                 try await session.waitForSpawn(pendingPackets: radius.pendingPackets)
             }

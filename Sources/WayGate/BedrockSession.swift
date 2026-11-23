@@ -182,6 +182,9 @@ public actor BedrockSession {
             var match: Value?
             for packet in batch {
                 onPacket?(packet)
+                if packet.id == Disconnect.packetID, packet.sender == 0, packet.target == 0 {
+                    throw BedrockError.peerDisconnected(reason: try Disconnect(decoding: packet).reason)
+                }
                 if packet.id == NetworkStackLatency.packetID,
                    let response = try NetworkStackLatency.response(to: packet) {
                     try await sendBatch([response])
@@ -213,6 +216,9 @@ public actor BedrockSession {
         try await sendBatch([exchange.begin()])
         while let incoming = try await receiveBatch() {
             for (index, packet) in incoming.enumerated() {
+                if packet.id == Disconnect.packetID, packet.sender == 0, packet.target == 0 {
+                    throw BedrockError.peerDisconnected(reason: try Disconnect(decoding: packet).reason)
+                }
                 if packet.id == NetworkStackLatency.packetID {
                     if let response = try NetworkStackLatency.response(to: packet) { try await sendBatch([response]) }
                     continue

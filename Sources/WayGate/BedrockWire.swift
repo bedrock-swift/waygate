@@ -5,6 +5,7 @@ public enum BedrockError: Error, Equatable {
     case unexpectedPacket(UInt16)
     case unsupportedProtocol(Int32)
     case closed
+    case peerDisconnected(reason: Int32)
     case timedOut
     case invalidChecksum
     case invalidClientToken
