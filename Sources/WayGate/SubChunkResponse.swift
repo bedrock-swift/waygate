@@ -16,7 +16,9 @@ public struct SubChunkResponse: Equatable, Sendable {
         case copied
 
         fileprivate init(reading reader: inout BedrockReader, render: Bool) throws {
-            switch try reader.byte() {
+            let kind = try reader.byte()
+            guard try reader.bool() == (kind == 1) else { throw BedrockError.malformed }
+            switch kind {
             case 0: self = .none
             case 1:
                 var heights: [Int8] = []
@@ -35,19 +37,19 @@ public struct SubChunkResponse: Equatable, Sendable {
 
         fileprivate func append(to payload: inout [UInt8], render: Bool) throws {
             switch self {
-            case .none: payload.append(0)
+            case .none: payload += [0, 0]
             case .heights(let heights):
                 guard heights.count == 256 else { throw BedrockError.malformed }
-                payload.append(1)
+                payload += [1, 1]
                 for start in stride(from: 0, to: 256, by: 16) {
                     payload.append(16)
                     payload.append(contentsOf: heights[start..<(start + 16)].map { UInt8(bitPattern: $0) })
                 }
-            case .tooHigh: payload.append(2)
-            case .tooLow: payload.append(3)
+            case .tooHigh: payload += [2, 0]
+            case .tooLow: payload += [3, 0]
             case .copied:
                 guard render else { throw BedrockError.malformed }
-                payload.append(4)
+                payload += [4, 0]
             }
         }
     }
@@ -121,7 +123,7 @@ public struct SubChunkResponse: Equatable, Sendable {
         center = try reader.subChunkPosition()
         let count = try reader.varUInt()
         guard count <= Self.maximumEntries else { throw BedrockError.limitExceeded }
-        entries = try reader.list(count: count, minimumElementSize: 8) { try Entry(reading: &$0) }
+        entries = try reader.list(count: count, minimumElementSize: 10) { try Entry(reading: &$0) }
         guard reader.isEmpty else { throw BedrockError.malformed }
     }
 
