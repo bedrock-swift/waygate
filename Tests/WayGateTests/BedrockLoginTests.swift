@@ -467,6 +467,8 @@ private func runNativeSpawn(
         JigsawStructureData.packetID, VoxelShapes.packetID, StartGame.packetID, ItemRegistry.packetID,
         BiomeDefinitionList.packetID
     ])
+    let items = try ItemRegistry(decoding: #require(worldPackets.first { $0.id == ItemRegistry.packetID }))
+    #expect(items == nativeSpawnItems)
     #expect(worldPackets.last == (try nativeSpawnBiomes.packet()))
 
     try await send(RequestChunkRadius(radius: 2, maximumRadius: 2).packet())
@@ -525,7 +527,7 @@ private func serveNativeSpawn(on session: BedrockSession) async throws {
     let stack = ResourcePackStack(baseGameVersion: game.gameVersion)
     let packs = try ResourcePackNegotiation(info: .init(), stack: stack, format: .v26_60)
     let pending = try await session.negotiateResourcePacks(packs)
-    try await session.startGame(game, items: ItemRegistry(items: []), biomes: nativeSpawnBiomes)
+    try await session.startGame(game, items: nativeSpawnItems, biomes: nativeSpawnBiomes)
     let negotiated = try await session.negotiateChunkRadius(maximum: 2, pendingPackets: pending)
     let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, subChunkLimit: -1, payload: [1, 2, 0])
     let registry = try AvailableActorIdentifiers(names: ["minecraft:player"])
@@ -565,6 +567,10 @@ private func serveNativeSpawn(on session: BedrockSession) async throws {
     try await session.disconnect(Disconnect(reason: 0, screen: .init(message: "Session ended")))
     #expect(try await session.receive() == nil)
 }
+
+private let nativeSpawnItems = ItemRegistry(items: (1...2_080).map { index in
+    .init(name: "test:item_\(index)", runtimeID: Int16(index), componentBased: false, version: 0)
+})
 
 private let nativeSpawnBiomes = BiomeDefinitionList(definitions: [
     .init(
