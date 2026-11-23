@@ -342,10 +342,3 @@ extension BedrockReader {
         Float(bitPattern: try littleEndian(UInt32.self))
     }
 }
-
-private extension [UInt8] {
-    mutating func appendCompound(_ compound: NetworkNBT) throws {
-        guard compound.bytes.count <= BedrockBatch.maximumBytes - count else { throw BedrockError.limitExceeded }
-        append(contentsOf: compound.bytes)
-    }
-}
