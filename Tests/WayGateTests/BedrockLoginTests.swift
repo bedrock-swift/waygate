@@ -494,13 +494,18 @@ private func runNativeSpawn(
     #expect(chunkData.subChunks.isEmpty)
     #expect(chunkData.biomes == Array(repeating: PalettedStorage(uniform: 1), count: 24))
     #expect(try await receive() == [PlayStatus.playerSpawn.packet(), CreativeContent().packet()])
-    let request = SubChunkRequest(dimension: 0, center: .zero, offsets: [SIMD3(0, -1, 0)])
+    let request = SubChunkRequest(dimension: 0, center: .zero, offsets: [.zero, SIMD3(0, 1, 0)])
     try await send(request.packet())
     let responses = try await receive()
     let subChunks = try SubChunkResponse(decoding: #require(responses.first))
-    #expect(subChunks == SubChunkResponse(dimension: 0, center: .zero, entries: [
-        .init(offset: SIMD3(0, -1, 0), status: .allAir)
-    ]))
+    #expect(subChunks.center == .zero)
+    #expect(subChunks.entries.map(\.status) == [.success, .allAir])
+    let floor = try #require(subChunks.entries.first)
+    let floorSection = try SubChunk(decoding: #require(floor.data))
+    #expect(floorSection.layers == [PalettedStorage(uniform: 3)])
+    #expect(floor.heightMap == .heights(Array(repeating: 15, count: 256)))
+    #expect(floor.renderHeightMap == floor.heightMap)
+    #expect(subChunks.entries.last?.heightMap == .tooLow)
     try await send(SetLocalPlayerAsInitialized(entityRuntimeID: 1).packet())
     let snapshot = try await receive()
     let inventory = try InventoryContent(decoding: #require(snapshot.first))
@@ -559,11 +564,16 @@ private func serveNativeSpawn(on session: BedrockSession) async throws {
     )
     let registry = try AvailableActorIdentifiers(names: ["minecraft:player"])
     try await session.spawn(at: game.world.spawn, with: [chunk], actorIdentifiers: registry)
+    let terrain = try SubChunk(y: 0, layers: [PalettedStorage(uniform: 3)]).encode()
     let pendingPackets = try await session.waitForSpawn(
         pendingPackets: negotiated.pendingPackets,
         respondToSubChunkRequest: { request in
             SubChunkResponse(dimension: request.dimension, center: request.center, entries: request.offsets.map {
-                .init(offset: $0, status: .allAir)
+                if $0.y == 0 {
+                    let heightMap = SubChunkResponse.HeightMap.heights(Array(repeating: 15, count: 256))
+                    return .init(offset: $0, status: .success, data: terrain, heightMap: heightMap, renderHeightMap: heightMap)
+                }
+                return .init(offset: $0, status: .allAir, heightMap: .tooLow, renderHeightMap: .tooLow)
             })
         },
         onPacket: nil
