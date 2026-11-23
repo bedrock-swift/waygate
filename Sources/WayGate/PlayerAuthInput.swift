@@ -111,7 +111,7 @@ public struct PlayerAuthInput: Equatable, Sendable {
     public func movementActions() throws -> MovementActions? {
         var reader = BedrockReader(optionalData[...])
         _ = try reader.optional { try ItemInteraction(reading: &$0) }
-        guard try !reader.bool() else { return nil } // stack request precedes movement actions
+        _ = try reader.optional { try ItemStackRequest.Entry(reading: &$0) }
         let blocks = try reader.optional { reader in
             let count = try reader.varUInt()
             guard count <= 100 else { throw BedrockError.limitExceeded }
@@ -126,6 +126,12 @@ public struct PlayerAuthInput: Equatable, Sendable {
         }
         guard reader.isEmpty else { throw BedrockError.malformed }
         return MovementActions(blocks: blocks, vehicleRotation: vehicleRotation, predictedVehicleID: predictedVehicleID)
+    }
+
+    public func itemStackRequest() throws -> ItemStackRequest.Entry? {
+        var reader = BedrockReader(optionalData[...])
+        _ = try reader.optional { try ItemInteraction(reading: &$0) }
+        return try reader.optional { try ItemStackRequest.Entry(reading: &$0) }
     }
 
     private static func validate(flags: [Int32]) throws {

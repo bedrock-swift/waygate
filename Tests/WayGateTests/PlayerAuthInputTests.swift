@@ -45,9 +45,11 @@ import WayGate
     #expect(actions.vehicleRotation == SIMD2(1, 2))
     #expect(actions.predictedVehicleID == -4)
 
-    withActions[optionalStart + 1] = 1
+    withActions.replaceSubrange((optionalStart + 1)...(optionalStart + 1), with: [1, 5, 0, 0, 0, 0, 0, 0])
     let inventoryPacket = try BedrockPacket(id: 144, payload: withActions)
-    #expect(try PlayerAuthInput(decoding: inventoryPacket).movementActions() == nil)
+    let inputWithStackRequest = try PlayerAuthInput(decoding: inventoryPacket)
+    #expect(try inputWithStackRequest.itemStackRequest()?.requestID == -3)
+    #expect(try inputWithStackRequest.movementActions() == actions)
 
     let interaction: [UInt8] = [
         1, 0, 0, 0, 2, 1, 1, 4, 6, 2, 6, 1, 0, 0, 0, 0, 0, 0, 0, 0,
