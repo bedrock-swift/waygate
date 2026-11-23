@@ -490,6 +490,9 @@ private func runNativeSpawn(
     let chunks = try await receive()
     let chunk = try LevelChunk(decoding: #require(chunks.first))
     #expect(chunk.subChunkLimit == -1)
+    let chunkData = try LevelChunkPayload(decoding: chunk.payload, subChunkCount: chunk.subChunkCount, biomeCount: 24)
+    #expect(chunkData.subChunks.isEmpty)
+    #expect(chunkData.biomes == Array(repeating: PalettedStorage(uniform: 1), count: 24))
     #expect(try await receive() == [PlayStatus.playerSpawn.packet(), CreativeContent().packet()])
     let request = SubChunkRequest(dimension: 0, center: .zero, offsets: [SIMD3(0, -1, 0)])
     try await send(request.packet())
@@ -550,7 +553,10 @@ private func serveNativeSpawn(on session: BedrockSession) async throws {
     let pending = try await session.negotiateResourcePacks(packs)
     try await session.startGame(game, items: nativeSpawnItems, biomes: nativeSpawnBiomes)
     let negotiated = try await session.negotiateChunkRadius(maximum: 2, pendingPackets: pending)
-    let chunk = LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 0, subChunkLimit: -1, payload: [1, 2, 0])
+    let chunk = try LevelChunk(
+        x: 0, z: 0, dimension: 0, requestingSubChunksUpTo: -1,
+        biomes: Array(repeating: PalettedStorage(uniform: 1), count: 24)
+    )
     let registry = try AvailableActorIdentifiers(names: ["minecraft:player"])
     try await session.spawn(at: game.world.spawn, with: [chunk], actorIdentifiers: registry)
     let pendingPackets = try await session.waitForSpawn(

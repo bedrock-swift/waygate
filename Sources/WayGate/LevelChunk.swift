@@ -27,6 +27,25 @@ public struct LevelChunk: Equatable, Sendable {
         self.clientBiomeUpdate = clientBiomeUpdate
     }
 
+    public init(x: Int32, z: Int32, dimension: Int32, contents: LevelChunkPayload, clientBiomeUpdate: Bool = false) throws {
+        try self.init(
+            x: x, z: z, dimension: dimension, subChunkCount: UInt32(contents.subChunks.count),
+            payload: contents.encode(), clientBiomeUpdate: clientBiomeUpdate
+        )
+    }
+
+    public init(
+        x: Int32, z: Int32, dimension: Int32, requestingSubChunksUpTo limit: Int32,
+        biomes: [PalettedStorage], clientBiomeUpdate: Bool = false
+    ) throws {
+        guard (-1...Int32(Self.maximumSubChunks)).contains(limit) else { throw BedrockError.malformed }
+        let contents = try LevelChunkPayload(subChunks: [], biomes: biomes)
+        try self.init(
+            x: x, z: z, dimension: dimension, subChunkCount: 0, subChunkLimit: limit,
+            payload: contents.encode(), clientBiomeUpdate: clientBiomeUpdate
+        )
+    }
+
     public init(decoding packet: BedrockPacket) throws {
         guard packet.id == Self.packetID else { throw BedrockError.unexpectedPacket(packet.id) }
         guard packet.payload.count <= BedrockBatch.maximumBytes else { throw BedrockError.limitExceeded }

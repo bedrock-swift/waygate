@@ -11,7 +11,7 @@ import WayGate
     )
     let wire: [UInt8] = [9, 1, 0xfc, 1, 6, 9, 0, 0xfd, 1, 14, 0xff, 1, 16, 0, 10, 0, 0, 10, 1, 116, 0]
     #expect(try chunk.encode() == wire)
-    let packet = try LevelChunk(x: 0, z: 0, dimension: 0, subChunkCount: 2, payload: chunk.encode()).packet()
+    let packet = try LevelChunk(x: 0, z: 0, dimension: 0, contents: chunk).packet()
     let decoded = try LevelChunk(decoding: packet)
     let payload = try LevelChunkPayload(decoding: decoded.payload, subChunkCount: decoded.subChunkCount, biomeCount: 3)
     #expect(payload == chunk)
@@ -23,6 +23,19 @@ import WayGate
     }
     #expect(throws: BedrockError.malformed) {
         try LevelChunkPayload(subChunks: [lower, lower], biomes: chunk.biomes)
+    }
+}
+
+@Test func encodesBiomePayloadForRequestedSubChunks() throws {
+    let chunk = try LevelChunk(
+        x: -1, z: 2, dimension: 0, requestingSubChunksUpTo: 8,
+        biomes: [.init(uniform: 1), .init(uniform: 1)]
+    )
+    let packet = try BedrockPacket(id: 58, payload: [1, 4, 0, 0, 1, 16, 0, 0, 4, 1, 2, 255, 0, 0])
+    #expect(try chunk.packet() == packet)
+    #expect(try LevelChunk(decoding: packet) == chunk)
+    #expect(throws: BedrockError.malformed) {
+        try LevelChunk(x: 0, z: 0, dimension: 0, requestingSubChunksUpTo: 65, biomes: [.init(uniform: 1)])
     }
 }
 
