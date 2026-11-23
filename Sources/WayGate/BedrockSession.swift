@@ -107,14 +107,15 @@ public actor BedrockSession {
     }
 
     public func negotiateChunkRadius(
-        maximum: Int32, pendingPackets: [BedrockPacket] = [], timeout: Duration = .seconds(15)
+        maximum: Int32, pendingPackets: [BedrockPacket] = [], timeout: Duration = .seconds(15),
+        onPacket: (@Sendable (BedrockPacket) -> Void)? = nil
     ) async throws -> (radius: Int32, pendingPackets: [BedrockPacket]) {
         guard !closed else { throw BedrockError.closed }
         guard !receiving, !sending, !exchanging else { throw BedrockError.concurrentOperation }
         guard case .started(let world) = worldState else { throw BedrockError.invalidSessionState }
         guard maximum > 0 else { throw BedrockError.malformed }
         let result = try await runExchange(timeout: timeout) {
-            try await self.exchangeChunkRadius(maximum: maximum, pendingPackets: pendingPackets)
+            try await self.exchangeChunkRadius(maximum: maximum, pendingPackets: pendingPackets, onPacket: onPacket)
         }
         worldState = .readyToSpawn(world, radius: result.radius)
         return result
@@ -156,9 +157,11 @@ public actor BedrockSession {
     }
 
     private func exchangeChunkRadius(
-        maximum: Int32, pendingPackets: [BedrockPacket]
+        maximum: Int32, pendingPackets: [BedrockPacket], onPacket: (@Sendable (BedrockPacket) -> Void)?
     ) async throws -> (radius: Int32, pendingPackets: [BedrockPacket]) {
-        let (radius, deferred) = try await receiveMatching(RequestChunkRadius.packetID, pendingPackets: pendingPackets) {
+        let (radius, deferred) = try await receiveMatching(
+            RequestChunkRadius.packetID, pendingPackets: pendingPackets, onPacket: onPacket
+        ) {
             let request = try RequestChunkRadius(decoding: $0)
             guard request.radius > 0 else { throw BedrockError.malformed }
             return min(request.radius, maximum)

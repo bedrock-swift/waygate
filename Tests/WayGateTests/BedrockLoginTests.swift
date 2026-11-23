@@ -312,7 +312,14 @@ func nethernetLoginAndSpawnUseTheExpectedIdentity(_ scenario: JoinCase) async th
             try await session.spawn(at: game.world.spawn, with: [chunk])
         }
         let deferred = try BedrockPacket(id: 9, payload: [0])
-        let radius = try await session.negotiateChunkRadius(maximum: 8, pendingPackets: [deferred])
+        let radiusPackets = AsyncStream<BedrockPacket>.makeStream()
+        let radius = try await session.negotiateChunkRadius(maximum: 8, pendingPackets: [deferred]) {
+            radiusPackets.continuation.yield($0)
+        }
+        radiusPackets.continuation.finish()
+        var radiusTrace: [BedrockPacket] = []
+        for await packet in radiusPackets.stream { radiusTrace.append(packet) }
+        #expect(radiusTrace == [deferred, radiusRequest, nextPacket])
         #expect(radius.radius == 8)
         #expect(radius.pendingPackets == [deferred, nextPacket])
         let radiusReply = try #require(await transport.replies.last)
