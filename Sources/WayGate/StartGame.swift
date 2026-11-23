@@ -83,7 +83,7 @@ public struct StartGame: Equatable, Sendable {
         public var templateContentIdentity: String = ""
         public var trial: Bool = false
 
-        public init(name: String, baseGameVersion: String = "1.26.60") {
+        public init(name: String, baseGameVersion: String = BedrockProtocol.currentVersion) {
             self.name = name
             self.baseGameVersion = baseGameVersion
         }
@@ -122,7 +122,7 @@ public struct StartGame: Equatable, Sendable {
     public var worldID = ""
     public var ownerID = ""
 
-    public init(player: Player, world: World, gameVersion: String = "1.26.60") {
+    public init(player: Player, world: World, gameVersion: String = BedrockProtocol.currentVersion) {
         self.player = player
         self.world = world
         self.gameVersion = gameVersion

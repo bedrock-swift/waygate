@@ -20,7 +20,7 @@ func run(_ args: [String]) async throws {
             gameVersion = "1.21.94"
         } else {
             login = try await .multiplayer(keys: MinecraftLoginKeys())
-            gameVersion = "1.26.60"
+            gameVersion = BedrockProtocol.currentVersion
         }
         let guid = UInt64.random(in: 1...UInt64(Int64.max))
         let fields = [

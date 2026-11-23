@@ -17,7 +17,8 @@ public struct BedrockLoginServer: Sendable {
     }
 
     public static func multiplayer(
-        protocolVersion: Int32 = 2225, verifying verifyToken: @escaping @Sendable (String) async throws -> BedrockIdentity
+        protocolVersion: Int32 = BedrockProtocol.currentNumber,
+        verifying verifyToken: @escaping @Sendable (String) async throws -> BedrockIdentity
     ) -> BedrockLoginServer {
         BedrockLoginServer(protocolVersion: protocolVersion, verification: { request in
             let identity = try await verifyToken(request.multiplayerToken())
@@ -25,7 +26,9 @@ public struct BedrockLoginServer: Sendable {
         })
     }
 
-    public static func multiplayer(protocolVersion: Int32 = 2225, keys: MinecraftLoginKeys) -> BedrockLoginServer {
+    public static func multiplayer(
+        protocolVersion: Int32 = BedrockProtocol.currentNumber, keys: MinecraftLoginKeys
+    ) -> BedrockLoginServer {
         multiplayer(protocolVersion: protocolVersion, verifying: keys.verify)
     }
 
